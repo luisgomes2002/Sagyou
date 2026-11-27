@@ -5,7 +5,15 @@ import {
   memoryTagPairs,
   type GraphEdge
 } from '../../utils/graph-layout'
-import type { AiMemory, Goal, Habit, Project, StickyNote, StoredFile, Task } from '../../types'
+import type {
+  AiMemory,
+  Goal,
+  Habit,
+  Project,
+  StickyNote,
+  StoredFile,
+  Task
+} from '@sagyou/core/types'
 
 const NOW = '2025-01-01T00:00:00.000Z'
 
@@ -95,7 +103,6 @@ function makeMemory(overrides: Partial<AiMemory> & { id: string }): AiMemory {
     tags: [],
     pinned: false,
     source: 'usuario',
-    sourceConversationId: null,
     createdAt: NOW,
     updatedAt: NOW,
     lastAccessedAt: NOW,

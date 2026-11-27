@@ -1,22 +1,15 @@
 import { app } from 'electron'
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'fs'
 import { is } from '@electron-toolkit/utils'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
-import {
-  normalizeMemory,
-  scrubConversationLinks,
-  type AiMemory,
-  type MemoryType
-} from './modules/ai/memory'
+import { normalizeMemory, type AiMemory, type MemoryType } from '@sagyou/core/memory'
 import { memorySearchWhere } from './modules/ai/memory-scope'
 import {
   interruptRunningHandoffs,
   restoreAsInterrupted,
   syncableMemories
 } from './modules/ai/handoff-state'
-import { decodeDataUrl } from './modules/files/image-files'
 import { isDocumentExt, parseDocument } from './modules/files/document-parser'
 import {
   buildMemoryDocuments,
@@ -32,7 +25,7 @@ import {
   type GlobalSearchResponse
 } from './modules/search/global-search-query'
 import { errorMessage, log } from './modules/logs/logger'
-import { moneyText, transactionDetails } from './modules/financial/money-text'
+import { moneyText, transactionDetails } from '@sagyou/core/money-text'
 import {
   loadOrCreateDeviceId,
   SYNC_DEVICE_FILE,
@@ -45,7 +38,7 @@ import {
   hashPayload,
   MEMORY_KINDS,
   type SyncRecord
-} from './modules/sync/sync-records'
+} from '@sagyou/core/sync/records'
 import {
   CLOSE_SETTLED_CONFLICTS_SQL,
   decodeIncoming,
@@ -63,17 +56,17 @@ import {
   applyRecordsToState,
   settledConflictParams,
   type ConflictType
-} from './modules/sync/sync-apply'
-import { latestVersions, replaceSyncableState } from './modules/sync/sync-replace'
-import { parseHlc } from './modules/sync/hlc'
+} from '@sagyou/core/sync/apply'
+import { latestVersions, replaceSyncableState } from '@sagyou/core/sync/replace'
+import { parseHlc } from '@sagyou/core/sync/hlc'
 import {
   buildOutgoing,
   encodeBatch,
   recordKey,
   type OutgoingRow,
   type WireRecord
-} from './modules/sync/sync-batch'
-import { openBatch, sealBatch } from './modules/sync/sync-crypto'
+} from '@sagyou/core/sync/batch'
+import { openBatch, sealBatch } from '@sagyou/core/sync/crypto'
 import {
   buildRebasedRow,
   buildSyncRows,
@@ -82,7 +75,7 @@ import {
   planSyncChanges,
   type StoredVersion,
   type SyncScope
-} from './modules/sync/sync-plan'
+} from '@sagyou/core/sync/plan'
 
 // ── Inline types (mirrors src/renderer/src/types/index.ts) ──────────────────
 
@@ -111,11 +104,8 @@ interface Project {
   color: string
   columns: Column[]
   links?: ProjectLink[]
-  // activeCodePathIds is the selection; activeCodePathId is the legacy singular
-  // form, still read so pre-multi-select databases and backups keep working.
   codePaths?: CodePath[]
   activeCodePathIds?: string[]
-  activeCodePathId?: string
   order?: number
   archivedAt?: string
   createdAt: string
@@ -299,7 +289,6 @@ interface FinancialTable {
   provider?: string
   actualBalance?: number | string
   actualBalanceUpdatedAt?: string
-  legacyFinancialMetadata?: Record<string, unknown>
   createdAt: string
   updatedAt: string
 }
@@ -310,18 +299,6 @@ interface StoredFile {
   size: number
   createdAt: string
   projectId?: string
-}
-
-interface EntityEvent {
-  id: string
-  entityType: string
-  entityId: string
-  action: 'created' | 'updated' | 'deleted'
-  summary: string
-  source: 'user' | 'ai'
-  toolName?: string
-  convId?: string
-  timestamp: string
 }
 
 interface TimeBlock {
@@ -371,11 +348,6 @@ interface SaveData {
   timeBlocks?: TimeBlock[]
   routines?: Routine[]
   activeTimers?: { taskId: string; startedAt: number }[]
-  // Legacy single-timer mirror; still written so an older app version reading
-  // this DB resolves one timer. New code reads/writes `activeTimers`.
-  activeTimer?: { taskId: string; startedAt: number } | null
-  // Entity events to append (set by the AI tool layer; absent on user saves).
-  entityEvents?: EntityEvent[]
   // The last sync generation the renderer applied (absent = 0). Never persisted:
   // saveData uses it to keep records changed remotely after that generation.
   syncGeneration?: number
@@ -384,10 +356,6 @@ interface SaveData {
 // ── DB paths ─────────────────────────────────────────────────────────────────
 
 const DB_PATH = join(app.getPath('userData'), is.dev ? 'kanban-dev.db' : 'kanban.db')
-const LEGACY_PATH = join(
-  app.getPath('userData'),
-  is.dev ? 'kanban-data.dev.json' : 'kanban-data.json'
-)
 
 let _db: Database.Database | null = null
 // Set by closeDatabase() before a remote wipe deletes the file: nothing may reopen it.
@@ -403,7 +371,6 @@ function getDb(): Database.Database {
   migrateSyncRecordsTable(_db)
   migrateSyncRecordsColumns(_db)
   migrateSyncTables(_db)
-  migrateMoneyColumnsToText(_db)
   migrateTransactionsLinkedColumn(_db)
   migrateFinancialPlanningColumns(_db)
   migrateTransactionDetailsColumn(_db)
@@ -413,17 +380,13 @@ function getDb(): Database.Database {
   migrateRoutineBorderStyleColumn(_db)
   migrateNoteBorderStyleColumn(_db)
   migrateGoalKindColumn(_db)
-  migrateMemoryDropProjectFk(_db)
-  migrateMemoryProvenanceColumn(_db)
   ensureMemorySearch(_db)
-  migrateTaskImagesToDisk(_db)
   migrateNotesTaskIdsGoalIds(_db)
-  migrateFromJson(_db)
+  dropEntityEvents(_db)
   // Before the reconcile below: a handoff a crash left "em andamento" must be
   // versioned for the first time as "interrompida", never as running.
   interruptRunningHandoffsOnOpen(_db)
   reconcileSyncRecords(_db)
-  trimEventLog(_db)
   createGlobalSearchIndex(_db)
   // FTS is disposable: startup also repairs an index left stale by an older build.
   rebuildSearchIndexFromDb(_db)
@@ -630,107 +593,6 @@ function parseFinancialProfiles(value: unknown): FinancialProfile[] {
     : defaultFinancialProfiles()
 }
 
-// One-time migration for existing DBs: the money columns (price, amount,
-// target_amount) were originally declared REAL. Rebuild those tables with TEXT
-// columns so amounts are stored as decimal strings on disk, matching the
-// in-memory schema. Idempotent — skips tables already migrated to TEXT.
-function migrateMoneyColumnsToText(db: Database.Database): void {
-  const columnType = (table: string, col: string): string | null => {
-    const info = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string; type: string }[]
-    const c = info.find((r) => r.name === col)
-    return c ? String(c.type).toUpperCase() : null
-  }
-
-  const rebuilds = [
-    {
-      table: 'shopping_items',
-      column: 'price',
-      createNew: `CREATE TABLE shopping_items_new (
-        id TEXT PRIMARY KEY,
-        table_id TEXT NOT NULL REFERENCES financial_tables(id) ON DELETE CASCADE,
-        name TEXT NOT NULL,
-        qty REAL NOT NULL,
-        price TEXT,
-        done INTEGER NOT NULL DEFAULT 0,
-        link TEXT,
-        linked_transaction_id TEXT
-      )`,
-      copy: `INSERT INTO shopping_items_new (id,table_id,name,qty,price,done,link,linked_transaction_id)
-        SELECT id,table_id,name,qty,
-          CASE WHEN price IS NULL THEN NULL ELSE CAST(price AS TEXT) END,
-          done,link,linked_transaction_id FROM shopping_items`
-    },
-    {
-      table: 'transactions',
-      column: 'amount',
-      createNew: `CREATE TABLE transactions_new (
-        id TEXT PRIMARY KEY,
-        table_id TEXT NOT NULL REFERENCES financial_tables(id) ON DELETE CASCADE,
-        description TEXT NOT NULL,
-        amount TEXT NOT NULL,
-        type TEXT NOT NULL,
-        date TEXT NOT NULL,
-        category TEXT,
-        from_shopping INTEGER DEFAULT 0,
-        linked_transaction_id TEXT
-      )`,
-      copy: `INSERT INTO transactions_new (id,table_id,description,amount,type,date,category,from_shopping,linked_transaction_id)
-        SELECT id,table_id,description,CAST(amount AS TEXT),type,date,category,from_shopping,linked_transaction_id FROM transactions`
-    },
-    {
-      table: 'financial_goals',
-      column: 'target_amount',
-      createNew: `CREATE TABLE financial_goals_new (
-        id TEXT PRIMARY KEY,
-        table_id TEXT NOT NULL REFERENCES financial_tables(id) ON DELETE CASCADE,
-        name TEXT NOT NULL,
-        target_amount TEXT NOT NULL,
-        target_month INTEGER NOT NULL,
-        target_year INTEGER NOT NULL,
-        completed_at TEXT,
-        completion_note TEXT
-      )`,
-      copy: `INSERT INTO financial_goals_new (id,table_id,name,target_amount,target_month,target_year,completed_at,completion_note)
-        SELECT id,table_id,name,CAST(target_amount AS TEXT),target_month,target_year,completed_at,completion_note FROM financial_goals`
-    },
-    {
-      table: 'yield_entries',
-      column: 'amount',
-      createNew: `CREATE TABLE yield_entries_new (
-        id TEXT PRIMARY KEY,
-        source_id TEXT NOT NULL REFERENCES yield_sources(id) ON DELETE CASCADE,
-        date TEXT NOT NULL,
-        amount TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      )`,
-      copy: `INSERT INTO yield_entries_new (id,source_id,date,amount,created_at)
-        SELECT id,source_id,date,CAST(amount AS TEXT),created_at FROM yield_entries`
-    }
-  ]
-
-  const pending = rebuilds.filter((r) => columnType(r.table, r.column) === 'REAL')
-  if (pending.length === 0) return
-
-  // foreign_keys cannot be toggled inside a transaction; disable around the rebuild.
-  db.pragma('foreign_keys = OFF')
-  try {
-    db.transaction(() => {
-      for (const r of pending) {
-        db.exec(r.createNew)
-        db.exec(r.copy)
-        db.exec(`DROP TABLE ${r.table}`)
-        db.exec(`ALTER TABLE ${r.table}_new RENAME TO ${r.table}`)
-      }
-    })()
-    log.info('store', 'migration', {
-      name: 'money_columns_to_text',
-      tables: pending.map((r) => r.table).join(', ')
-    })
-  } finally {
-    db.pragma('foreign_keys = ON')
-  }
-}
-
 // One-time migration for existing DBs: add linked_transaction_id column to
 // the transactions table. Uses ALTER TABLE ADD COLUMN (safe, idempotent).
 function migrateTransactionsLinkedColumn(db: Database.Database): void {
@@ -825,62 +687,6 @@ function migrateGoalKindColumn(db: Database.Database): void {
   if (!has) db.prepare('ALTER TABLE goals ADD COLUMN kind TEXT').run()
 }
 
-// One-time migration for existing DBs: the `memory` table originally declared
-// `project_id TEXT REFERENCES projects(id) ON DELETE CASCADE`. That cascade was
-// a data-loss bug — persistAll (first save of a session) and persistDiff (any
-// project edit) delete-and-reinsert the project row, and the cascade hard-deleted
-// every project-scoped memory (pinned included, never archived) while the
-// re-insert path never restored them, since memory is written outside persistAll.
-// Rebuild the table with a plain TEXT project_id (like tasks/notes) so a project
-// re-insert no longer touches memory; a genuinely deleted project just leaves its
-// memories orphaned. Idempotent — skips a table that already has no FK.
-function migrateMemoryDropProjectFk(db: Database.Database): void {
-  const fks = db.prepare(`PRAGMA foreign_key_list(memory)`).all() as { table: string }[]
-  const hasProjectFk = fks.some((r) => r.table === 'projects')
-  if (!hasProjectFk) return
-
-  // foreign_keys cannot be toggled inside a transaction; disable around the rebuild.
-  db.pragma('foreign_keys = OFF')
-  try {
-    db.transaction(() => {
-      db.exec(`CREATE TABLE memory_new (
-        id TEXT PRIMARY KEY,
-        project_id TEXT,
-        type TEXT NOT NULL,
-        title TEXT NOT NULL,
-        body TEXT NOT NULL,
-        tags TEXT NOT NULL DEFAULT '[]',
-        pinned INTEGER NOT NULL DEFAULT 0,
-        source TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        last_accessed_at TEXT NOT NULL,
-        access_count INTEGER NOT NULL DEFAULT 0,
-        archived_at TEXT
-      )`)
-      db.exec(`INSERT INTO memory_new
-        (id,project_id,type,title,body,tags,pinned,source,created_at,updated_at,last_accessed_at,access_count,archived_at)
-        SELECT id,project_id,type,title,body,tags,pinned,source,created_at,updated_at,last_accessed_at,access_count,archived_at FROM memory`)
-      db.exec(`DROP TABLE memory`)
-      db.exec(`ALTER TABLE memory_new RENAME TO memory`)
-      db.exec(
-        `CREATE INDEX IF NOT EXISTS idx_memory_project ON memory(project_id) WHERE archived_at IS NULL`
-      )
-    })()
-    log.info('store', 'migration', { name: 'memory_drop_project_cascade' })
-  } finally {
-    db.pragma('foreign_keys = ON')
-  }
-}
-
-/** Additive provenance migration: old memories remain valid, just unlinked. */
-function migrateMemoryProvenanceColumn(db: Database.Database): void {
-  const columns = db.prepare('PRAGMA table_info(memory)').all() as { name: string }[]
-  if (!columns.some((column) => column.name === 'source_conversation_id')) {
-    db.prepare('ALTER TABLE memory ADD COLUMN source_conversation_id TEXT').run()
-  }
-}
-
 /**
  * Search is derived data, never another source of truth: FTS indexes the
  * satellite table and is rebuilt on startup, including after the old FK-table
@@ -912,66 +718,18 @@ function ensureMemorySearch(db: Database.Database): void {
   db.exec("INSERT INTO memory_fts(memory_fts) VALUES('rebuild')")
 }
 
-// One-time migration for existing DBs: task images used to store their bytes as
-// base64 in `task_images.data_url`, which bloated the DB (loaded whole into the
-// renderer store, reserialized on every save). Move each blob to a file at
-// task-images/<id><ext> — matching chat images and file attachments — and
-// rebuild the table with an `ext` column and no `data_url`. Idempotent: skips a
-// table already migrated (no `data_url` column). A row whose data_url won't
-// decode is dropped from disk but keeps its metadata row (a broken thumbnail,
-// no worse than the un-writable case), so one bad blob can't abort the boot.
-function migrateTaskImagesToDisk(db: Database.Database): void {
-  const info = db.prepare(`PRAGMA table_info(task_images)`).all() as { name: string }[]
-  if (!info.some((c) => c.name === 'data_url')) return
-
-  const dir = join(app.getPath('userData'), 'task-images')
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-
-  // Write the blobs to disk first (outside the schema transaction — file IO
-  // can't roll back with SQL anyway), collecting the ext each row should carry.
-  const rows = db.prepare('SELECT id, data_url FROM task_images').all() as {
-    id: string
-    data_url: string
-  }[]
-  const extById = new Map<string, string>()
-  for (const r of rows) {
-    const decoded = decodeDataUrl(r.data_url)
-    if ('error' in decoded) continue // undecodable blob → metadata stays, no file
-    const ext = `.${decoded.ext}`
-    try {
-      writeFileSync(join(dir, `${r.id}${ext}`), decoded.bytes)
-      extById.set(r.id, ext)
-    } catch {
-      /* unwritable blob is skipped; the row keeps a blank ext */
-    }
-  }
-
-  db.pragma('foreign_keys = OFF')
-  try {
-    db.transaction(() => {
-      db.exec(`CREATE TABLE task_images_new (
-        id TEXT PRIMARY KEY,
-        task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-        name TEXT NOT NULL,
-        ext TEXT NOT NULL DEFAULT '',
-        size INTEGER NOT NULL,
-        added_at TEXT NOT NULL
-      )`)
-      const insert = db.prepare(
-        'INSERT INTO task_images_new (id,task_id,name,ext,size,added_at) SELECT id,task_id,name,?,size,added_at FROM task_images WHERE id=?'
-      )
-      for (const r of rows) insert.run(extById.get(r.id) ?? '', r.id)
-      db.exec(`DROP TABLE task_images`)
-      db.exec(`ALTER TABLE task_images_new RENAME TO task_images`)
-    })()
-    log.info('store', 'migration', {
-      name: 'task_images_to_disk',
-      migrated: extById.size,
-      total: rows.length
-    })
-  } finally {
-    db.pragma('foreign_keys = ON')
-  }
+// ── dropEntityEvents ──────────────────────────────────────────────────────
+// ⚠️ Destructive, on purpose. `entity_events` was an append-only diary of every save that nothing
+// has read since `ai:lineage:list` was removed, and nothing writes it any more. It is in no
+// backup and no sync, so dropping it loses only that unread diary. Idempotent: a new database
+// never has it and an already migrated one has nothing to drop.
+function dropEntityEvents(db: Database.Database): void {
+  const has = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='entity_events'")
+    .get()
+  db.exec('DROP INDEX IF EXISTS idx_entity_events_entity')
+  db.exec('DROP TABLE IF EXISTS entity_events')
+  if (has) log.info('store', 'migration', { name: 'drop_entity_events' })
 }
 
 // ── migrateNotesTaskIdsGoalIds ────────────────────────────────────────────
@@ -1049,8 +807,7 @@ function initSchema(db: Database.Database): void {
     -- Task images keep only metadata here; the bytes live on disk at
     -- task-images/<id><ext> (like chat images and file attachments), so a big
     -- photo no longer bloats the DB that's loaded whole into the renderer store
-    -- and reserialized on every save. migrateTaskImagesToDisk moves legacy
-    -- data_url rows out; a fresh DB starts with ext and no data_url.
+    -- and reserialized on every save.
     CREATE TABLE IF NOT EXISTS task_images (
       id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -1211,7 +968,7 @@ function initSchema(db: Database.Database): void {
     -- the re-insert path never restores them — silent, unrecoverable data loss
     -- (pinned included, never archived). project_id NULL = global; a memory whose
     -- project was deleted survives as an orphan (reads as "projeto removido") and
-    -- decays on its own if unused. migrateMemoryDropProjectFk drops the old FK.
+    -- decays on its own if unused.
     CREATE TABLE IF NOT EXISTS memory (
       id TEXT PRIMARY KEY,
       project_id TEXT,
@@ -1221,7 +978,6 @@ function initSchema(db: Database.Database): void {
       tags TEXT NOT NULL DEFAULT '[]',
       pinned INTEGER NOT NULL DEFAULT 0,
       source TEXT NOT NULL,
-      source_conversation_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       last_accessed_at TEXT NOT NULL,
@@ -1229,21 +985,6 @@ function initSchema(db: Database.Database): void {
       archived_at TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_memory_project ON memory(project_id) WHERE archived_at IS NULL;
-    -- Entity event log: append-only audit trail of every mutation. Purely additive
-    -- (no updates, no deletes), so it can serve as a source of truth for lineage
-    -- and reproducibility without touching the existing save path.
-    CREATE TABLE IF NOT EXISTS entity_events (
-      id TEXT PRIMARY KEY,
-      entity_type TEXT NOT NULL,
-      entity_id TEXT NOT NULL,
-      action TEXT NOT NULL,
-      summary TEXT NOT NULL DEFAULT '',
-      source TEXT NOT NULL DEFAULT 'user',
-      tool_name TEXT,
-      conv_id TEXT,
-      timestamp TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_entity_events_entity ON entity_events(entity_type, entity_id);
     CREATE TABLE IF NOT EXISTS time_blocks (
       id TEXT PRIMARY KEY,
       date TEXT NOT NULL,
@@ -2219,22 +1960,6 @@ export function syncRecordOrigins(kind: string): Map<string, string> {
   return new Map(rows.map((r) => [r.id, r.device_id]))
 }
 
-// ── JSON migration ────────────────────────────────────────────────────────────
-
-function migrateFromJson(db: Database.Database): void {
-  if (!existsSync(LEGACY_PATH)) return
-  const { c } = db.prepare('SELECT COUNT(*) as c FROM projects').get() as { c: number }
-  if (c > 0) return
-  try {
-    const data = JSON.parse(readFileSync(LEGACY_PATH, 'utf-8')) as SaveData
-    db.transaction(() => persistAll(db, data))()
-    renameSync(LEGACY_PATH, LEGACY_PATH + '.migrated')
-    log.info('store', 'migration', { name: 'json_to_sqlite' })
-  } catch (err) {
-    log.error('store', 'migration_failed', { name: 'json_to_sqlite', msg: errorMessage(err) })
-  }
-}
-
 // ── Write (granular diff vs. last snapshot; full rewrite on the first save) ──
 
 // The last full state persisted this session, kept in memory so the next save
@@ -2348,9 +2073,7 @@ function prepareWrite(db: Database.Database) {
       )
       for (const c of p.columns ?? []) ins.column.run(c.id, p.id, c.name, c.order, c.color ?? null)
       for (const l of p.links ?? []) ins.link.run(l.id, p.id, l.label, l.url)
-      const active = new Set(
-        p.activeCodePathIds ?? (p.activeCodePathId ? [p.activeCodePathId] : [])
-      )
+      const active = new Set(p.activeCodePathIds ?? [])
       for (const cp of p.codePaths ?? [])
         ins.codePath.run(cp.id, p.id, cp.label ?? null, cp.path, active.has(cp.id) ? 1 : 0)
     },
@@ -2423,7 +2146,6 @@ function prepareWrite(db: Database.Database) {
     },
     ftable: (ft: FinancialTable): void => {
       const metadata = JSON.stringify({
-        ...ft.legacyFinancialMetadata,
         provider: ft.provider,
         actualBalance: ft.actualBalance,
         actualBalanceUpdatedAt: ft.actualBalanceUpdatedAt,
@@ -2522,12 +2244,6 @@ function prepareWrite(db: Database.Database) {
     }
   }
 
-  const setTimer = (v: unknown): void => {
-    ins.setting.run('activeTimer', JSON.stringify(v))
-  }
-  const clearTimer = (): void => {
-    del.setting.run('activeTimer')
-  }
   const setTimers = (v: unknown): void => {
     ins.setting.run('activeTimers', JSON.stringify(v))
   }
@@ -2538,15 +2254,9 @@ function prepareWrite(db: Database.Database) {
     del.setting.run('activeTimers')
   }
 
-  return { insert, del, setTimer, clearTimer, setTimers, clearTimers, setSetting }
+  return { insert, del, setTimers, clearTimers, setSetting }
 }
 
-/**
- * Write the running-timer settings: the `activeTimers` array plus the legacy
- * `activeTimer` mirror (first, or null). One place so persistAll and persistDiff
- * agree. An empty array clears both keys, so a stopped timer never lingers to
- * the next boot.
- */
 function writeFinancialProfiles(
   w: ReturnType<typeof prepareWrite>,
   profiles: FinancialProfile[] | undefined,
@@ -2561,17 +2271,16 @@ function writeFinancialProfiles(
   )
 }
 
+/**
+ * Write the running-timer setting (`activeTimers`). One place so persistAll and persistDiff
+ * agree. An empty array clears the key, so a stopped timer never lingers to the next boot.
+ */
 function writeTimers(
   w: ReturnType<typeof prepareWrite>,
-  timers: { taskId: string; startedAt: number }[] | undefined,
-  legacy: { taskId: string; startedAt: number } | null | undefined
+  timers: { taskId: string; startedAt: number }[] | undefined
 ): void {
-  const list = timers ?? (legacy ? [legacy] : [])
-  if (list.length > 0) w.setTimers(list)
+  if (timers && timers.length > 0) w.setTimers(timers)
   else w.clearTimers()
-  const first = list[0] ?? null
-  if (first) w.setTimer(first)
-  else w.clearTimer()
 }
 
 /**
@@ -2630,13 +2339,11 @@ function persistDiff(db: Database.Database, prev: SaveData, next: SaveData): voi
   diffEntities(prev.files, next.files, w.del.file, w.insert.file)
   diffEntities(prev.timeBlocks ?? [], next.timeBlocks ?? [], w.del.timeBlock, w.insert.timeBlock)
   diffEntities(prev.routines ?? [], next.routines ?? [], w.del.routine, w.insert.routine)
-  // Timers live in settings (activeTimers + legacy activeTimer mirror). Rewrite
-  // when either the array or the legacy field changes, so a stopped timer
-  // doesn't linger to the next boot.
+  // Timers live in settings (`activeTimers`). Rewrite when the array changes, so a stopped
+  // timer doesn't linger to the next boot.
   const timersChanged =
-    JSON.stringify(prev.activeTimers ?? null) !== JSON.stringify(next.activeTimers ?? null) ||
-    JSON.stringify(prev.activeTimer ?? null) !== JSON.stringify(next.activeTimer ?? null)
-  if (timersChanged) writeTimers(w, next.activeTimers, next.activeTimer)
+    JSON.stringify(prev.activeTimers ?? null) !== JSON.stringify(next.activeTimers ?? null)
+  if (timersChanged) writeTimers(w, next.activeTimers)
 }
 
 function persistAll(db: Database.Database, data: SaveData): void {
@@ -2690,7 +2397,7 @@ function persistAll(db: Database.Database, data: SaveData): void {
   for (const r of data.routines ?? []) w.insert.routine(r)
   // settings aren't cleared by the DELETE above, so writeTimers must clear the
   // keys when no timer is running, not only set them.
-  writeTimers(w, data.activeTimers, data.activeTimer)
+  writeTimers(w, data.activeTimers)
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -2807,8 +2514,7 @@ export function loadData(existingDb?: Database.Database): SaveData {
       }))
       const activeCodePathIds = rows.filter((c) => c.active).map((c) => c.id as string)
       if (!activeCodePathIds.length) return { codePaths }
-      // activeCodePathId mirrors the first selection for older readers.
-      return { codePaths, activeCodePathIds, activeCodePathId: activeCodePathIds[0] }
+      return { codePaths, activeCodePathIds }
     })(),
     ...(p.ord != null ? { order: p.ord } : {}),
     ...(p.archived_at != null ? { archivedAt: String(p.archived_at) } : {}),
@@ -2924,16 +2630,6 @@ export function loadData(existingDb?: Database.Database): SaveData {
         ...(meta.actualBalance != null ? { actualBalance: String(meta.actualBalance) } : {}),
         ...(typeof meta.actualBalanceUpdatedAt === 'string'
           ? { actualBalanceUpdatedAt: meta.actualBalanceUpdatedAt }
-          : {}),
-        ...(Array.isArray(meta.budgets) || Array.isArray(meta.recurringTransactions)
-          ? {
-              legacyFinancialMetadata: {
-                ...(Array.isArray(meta.budgets) ? { budgets: meta.budgets } : {}),
-                ...(Array.isArray(meta.recurringTransactions)
-                  ? { recurringTransactions: meta.recurringTransactions }
-                  : {})
-              }
-            }
           : {}),
         ...(typeof meta.profileId === 'string' ? { profileId: meta.profileId } : {}),
         ...(Array.isArray(meta.debts) ? { debts: meta.debts } : {})
@@ -3077,9 +2773,6 @@ export function loadData(existingDb?: Database.Database): SaveData {
     }
   })
 
-  // Prefer the new `activeTimers` array; fall back to the legacy single
-  // `activeTimer` (wrapped) so a DB written by an older app version still
-  // resolves its running timer. The renderer migrates the legacy field too.
   const getSetting = (key: string): unknown => {
     const row = db.prepare('SELECT value FROM settings WHERE key=?').get(key) as
       | { value: string }
@@ -3094,9 +2787,8 @@ export function loadData(existingDb?: Database.Database): SaveData {
     financialProfileIds.has(configuredActiveFinancialProfileId)
       ? configuredActiveFinancialProfileId
       : DEFAULT_FINANCIAL_PROFILE_ID
-  const legacyTimer = getSetting('activeTimer')
   const timersRaw = getSetting('activeTimers')
-  const activeTimers = Array.isArray(timersRaw) ? timersRaw : legacyTimer ? [legacyTimer] : []
+  const activeTimers = Array.isArray(timersRaw) ? timersRaw : []
   const featurePreferences = getSetting('featurePreferences')
   const uiPreferences = getSetting('uiPreferences')
 
@@ -3123,9 +2815,7 @@ export function loadData(existingDb?: Database.Database): SaveData {
     files,
     timeBlocks,
     routines,
-    activeTimers,
-    // Legacy field, still returned for any consumer that reads it directly.
-    activeTimer: legacyTimer ?? activeTimers[0] ?? null
+    activeTimers
   }
 }
 
@@ -3143,9 +2833,6 @@ export function saveData(data: unknown): void {
     ? guardStaleSave(data as SaveData, prev ?? loadData(db), remoteKeys)
     : (data as SaveData)
   if (remoteKeys.size) log.info('sync', 'stale_save_guarded', { records: remoteKeys.size })
-  // Events the AI tool layer explicitly asked to log (lineage). These ride
-  // alongside the save payload without altering the existing persist path.
-  const aiEvents = next.entityEvents ?? []
   db.transaction(() => {
     if (prev) persistDiff(db, prev, next)
     else persistAll(db, next)
@@ -3155,12 +2842,6 @@ export function saveData(data: unknown): void {
         complete: true
       })
     )
-    // Generate entity events from the diff between prev and next. The source
-    // is 'user' for auto-generated events (the renderer doesn't tag saves by
-    // origin); AI events ride on `entityEvents` and are appended separately.
-    const now = new Date().toISOString()
-    const autoEvents = diffEvents(prev, next, now)
-    appendEventRows(db, [...autoEvents, ...aiEvents])
     db.prepare('DELETE FROM file_search_content WHERE file_id NOT IN (SELECT id FROM files)').run()
     syncGlobalSearchIndex(db, withFileSearchContent(db, next))
     // Memory belongs to a satellite table. Only a project's archive state
@@ -3180,143 +2861,6 @@ export function saveData(data: unknown): void {
   // the next save then re-diffs (or rewrites) from a truthful base.
   lastSnapshot = structuredClone(next)
   forgetRemoteKeysUpTo(seenGeneration)
-}
-
-// ── Entity Event Log ─────────────────────────────────────────────────────────
-//
-// Purely append-only audit trail. Events are generated automatically from the
-// diff between the last snapshot and the current save (source=user), plus any
-// events the AI tool layer explicitly attaches (source=ai). Never pruned within
-// a session; capped to EVENT_LOG_MAX rows on boot via a lazy DELETE outside the
-// save transaction (so it never blocks the save path).
-
-const EVENT_LOG_MAX = 50_000
-
-type EntityWithTitle = { id: string; title?: string; name?: string; description?: string }
-
-function entityLabel(e: EntityWithTitle | undefined): string {
-  if (!e) return '(removido)'
-  const t = e.title ?? e.name ?? e.description ?? ''
-  return t ? `"${t.slice(0, 60)}"` : `#${e.id.slice(0, 8)}`
-}
-
-function entityTypeLabel(type: string): string {
-  const map: Record<string, string> = {
-    project: 'projeto',
-    task: 'task',
-    sprint: 'sprint',
-    note: 'nota',
-    goal: 'meta',
-    habit: 'hábito',
-    financial_table: 'tabela financeira',
-    file: 'arquivo'
-  }
-  return map[type] ?? type
-}
-
-/**
- * Compare two snapshots and produce an event for every created, updated, or
- * deleted top-level entity. Events are stable-ordered within a save batch.
- */
-function diffEvents(prev: SaveData | null, next: SaveData, timestamp: string): EntityEvent[] {
-  const events: EntityEvent[] = []
-  const emit = (type: string, id: string, action: EntityEvent['action'], label: string): void => {
-    const article =
-      action === 'created' ? 'criado' : action === 'updated' ? 'atualizado' : 'removido'
-    events.push({
-      id: randomUUID(),
-      entityType: type,
-      entityId: id,
-      action,
-      summary: `${entityTypeLabel(type)} ${label} ${article}`,
-      source: 'user',
-      timestamp
-    })
-  }
-
-  // Helper: diff a collection by id, returning creates/updates/deletes.
-  const diff = <T extends { id: string }>(
-    type: string,
-    prevArr: T[] | undefined,
-    nextArr: T[] | undefined
-  ): void => {
-    const prevMap = new Map((prevArr ?? []).map((e) => [e.id, e]))
-    const nextIds = new Set((nextArr ?? []).map((e) => e.id))
-    for (const e of nextArr ?? []) {
-      if (!prevMap.has(e.id))
-        emit(type, e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
-      else if (JSON.stringify(prevMap.get(e.id)) !== JSON.stringify(e))
-        emit(type, e.id, 'updated', entityLabel(e as unknown as EntityWithTitle))
-    }
-    for (const e of prevArr ?? [])
-      if (!nextIds.has(e.id))
-        emit(type, e.id, 'deleted', entityLabel(e as unknown as EntityWithTitle))
-  }
-
-  if (prev) {
-    diff('project', prev.projects, next.projects)
-    diff('task', prev.tasks, next.tasks)
-    diff('sprint', prev.sprints, next.sprints)
-    diff('note', prev.notes, next.notes)
-    diff('goal', prev.goals, next.goals)
-    diff('habit', prev.habits, next.habits)
-    diff('financial_table', prev.lists, next.lists)
-    diff('file', prev.files, next.files)
-  } else {
-    for (const e of next.projects ?? []) emit('project', e.id, 'created', entityLabel(e))
-    for (const e of next.tasks ?? []) emit('task', e.id, 'created', entityLabel(e))
-    for (const e of next.sprints ?? []) emit('sprint', e.id, 'created', entityLabel(e))
-    for (const e of next.notes ?? [])
-      emit('note', e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
-    for (const e of next.goals ?? []) emit('goal', e.id, 'created', entityLabel(e))
-    for (const e of next.habits ?? []) emit('habit', e.id, 'created', entityLabel(e))
-    for (const e of next.lists ?? [])
-      emit('financial_table', e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
-    for (const e of next.files ?? [])
-      emit('file', e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
-  }
-  return events
-}
-
-function appendEventRows(db: Database.Database, events: EntityEvent[]): void {
-  if (!events.length) return
-  const stmt = db.prepare(
-    `INSERT INTO entity_events (id, entity_type, entity_id, action, summary, source, tool_name, conv_id, timestamp)
-     VALUES (@id, @entity_type, @entity_id, @action, @summary, @source, @tool_name, @conv_id, @timestamp)`
-  )
-  for (const e of events)
-    stmt.run({
-      id: e.id,
-      entity_type: e.entityType,
-      entity_id: e.entityId,
-      action: e.action,
-      summary: e.summary,
-      source: e.source,
-      tool_name: e.toolName ?? null,
-      conv_id: e.convId ?? null,
-      timestamp: e.timestamp
-    })
-}
-
-/** Query the event log for one entity, newest first. */
-export function eventsForEntity(entityType: string, entityId: string): EntityEvent[] {
-  const db = getDb()
-  return db
-    .prepare(
-      `SELECT * FROM entity_events WHERE entity_type=? AND entity_id=? ORDER BY timestamp DESC LIMIT 200`
-    )
-    .all(entityType, entityId) as EntityEvent[]
-}
-
-/** Lazy cap of the event log — best-effort, outside the save transaction. */
-function trimEventLog(db: Database.Database): void {
-  const { cnt } = db.prepare('SELECT COUNT(*) as cnt FROM entity_events').get() as { cnt: number }
-  if (cnt > EVENT_LOG_MAX) {
-    const excess = cnt - EVENT_LOG_MAX + 1000
-    db.prepare(
-      `DELETE FROM entity_events WHERE id IN (SELECT id FROM entity_events ORDER BY timestamp ASC LIMIT ?)`
-    ).run(excess)
-  }
 }
 
 // ── Memory (satellite table; deliberately OUTSIDE persistAll) ────────────────
@@ -3345,7 +2889,6 @@ function memRowToMemory(r: Record<string, unknown>): AiMemory {
     tags,
     pinned: r.pinned === 1,
     source: r.source as AiMemory['source'],
-    sourceConversationId: null,
     createdAt: String(r.created_at),
     updatedAt: String(r.updated_at),
     lastAccessedAt: String(r.last_accessed_at),
@@ -3582,40 +3125,4 @@ export function replaceMemories(memories: AiMemory[]): void {
       )
     )
   })()
-}
-
-/** Consistent copy of the live database (safe under WAL), used by the pre-removal snapshot. */
-export async function copyDatabaseTo(dest: string): Promise<void> {
-  await getDb().backup(dest)
-}
-
-/**
- * Chat history is gone, so no memory may point into it. Rewrites only the rows
- * that carry a link; timestamps and access counters are left as they were.
- */
-export function scrubMemoryConversationLinks(): number {
-  const db = getDb()
-  const current = listMemories({ includeArchived: true })
-  const { memories, changed } = scrubConversationLinks(current)
-  db.transaction(() => {
-    // Rows are read as having no link, so the column itself is cleared in SQL.
-    db.prepare(
-      'UPDATE memory SET source_conversation_id=NULL WHERE source_conversation_id IS NOT NULL'
-    ).run()
-    // scrubConversationLinks returns the very same object for an untouched memory.
-    const rewritten = memories.filter((memory, index) => memory !== current[index])
-    for (const memory of rewritten) writeMemoryRow(db, memory)
-    if (changed) syncMemorySearchRows(db)
-    captureSafely(db, () =>
-      captureSyncVersions(
-        db,
-        () => extractMemoryRecords(syncableMemories(rewritten)),
-        memoryCaptureScope(
-          'scrub',
-          rewritten.map((m) => m.id)
-        )
-      )
-    )
-  })()
-  return changed
 }

@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { format, parseISO } from 'date-fns'
-import type { Project, Task, Sprint } from '../../types'
-import { PRIORITY_CONFIG } from '../../types'
-import { isDoneColumn } from '../../utils/columns'
+import type { Project, Task, Sprint } from '@sagyou/core/types'
+import { PRIORITY_CONFIG } from '@sagyou/core/types'
+import { isDoneColumn } from '@sagyou/core/columns'
 import { EmptyState } from '../EmptyState'
 
 interface Props {

@@ -1,5 +1,5 @@
 import { useMemo, useState, type JSX } from 'react'
-import type { FeatureId } from '../../types'
+import type { FeatureId } from '@sagyou/core/types'
 import { isViewEnabled, type NavTarget } from '../../navigation'
 import { GUIDE_CHAPTERS, findArticle, searchGuide } from '../../guide/content'
 import type { GuideArticle } from '../../guide/types'

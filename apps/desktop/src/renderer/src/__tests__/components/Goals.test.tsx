@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GoalCard } from '../../components/GoalCard'
 import { GoalModal } from '../../components/modals/GoalModal'
-import type { Goal } from '../../types'
+import type { Goal } from '@sagyou/core/types'
 
 const baseGoal: Goal = {
   id: 'goal',

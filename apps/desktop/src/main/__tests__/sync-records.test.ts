@@ -10,8 +10,8 @@ import {
   extractDataRecords,
   extractMemoryRecords,
   type SyncRecord
-} from '../modules/sync/sync-records'
-import type { AiMemory } from '../modules/ai/memory'
+} from '@sagyou/core/sync/records'
+import type { AiMemory } from '@sagyou/core/memory'
 
 const T = '2026-10-30T12:00:00.000Z'
 
@@ -258,7 +258,6 @@ describe('extractMemoryRecords', () => {
     tags: [],
     pinned: false,
     source: 'modelo',
-    sourceConversationId: null,
     createdAt: T,
     updatedAt: T,
     lastAccessedAt: T,

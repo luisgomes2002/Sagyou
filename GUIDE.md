@@ -80,7 +80,7 @@ npm run typecheck    # checa main e renderer
 npm run lint         # ESLint
 npm test             # roda tudo uma vez
 npm run test:coverage # testes + relatório de cobertura de main e renderer
-npm test -w sagyou -- src/main/__tests__/web-fetch.test.ts   # um arquivo só
+npm test -w sagyou -- src/main/__tests__/external-links.test.ts   # um arquivo só
 npm run build:linux  # (ou :win / :mac) gera o distribuível
 ```
 
@@ -94,7 +94,7 @@ não mascarar uma regressão nova.
 
 Monorepo com workspaces npm: o desktop em `apps/desktop/` (pacote `sagyou`; o nome define a pasta `userData` em dev e o nome dos instaladores, não mude), o código compartilhado em `packages/core/` (`@sagyou/core`), o Worker em `sync-server/` e o firmware do ESP32 em `firmware/esp32/` (PlatformIO, fora dos workspaces). ⚠️ O repositório é público: nunca versione o `secrets.h` do firmware (há teste que barra). Os testes do firmware rodam localmente (`pio test -e native` e `windows/testes.ps1`); veja `firmware/esp32/README.md`. **Os caminhos abaixo são relativos a `apps/desktop/`.** Os comandos rodam na raiz.
 
-`packages/core` guarda o que desktop e celular fazem igual: tipos, dinheiro, normalização, regras puras e todo o sync, inclusive o motor. Os caminhos antigos do desktop reexportam dele; código novo importa de `@sagyou/core/<módulo>`. ⚠️ Regra de dinheiro nova vai no core (`finance-actions` para escritas, `finance-views` para leituras e totais), nunca no slice do desktop nem numa tela do celular. ⚠️ **Sem Node no core** (nada de `crypto`, `zlib`, `fs`, `Buffer`, Electron ou React; o ESLint e um teste barram). ⚠️ **Nunca regenere** `packages/core/src/__tests__/fixtures/sync-vectors.json` para um teste passar: ele prova que o formato do sync não mudou. Detalhes no `CLAUDE.md`.
+`packages/core` guarda o que desktop e celular fazem igual: tipos, dinheiro, normalização, regras puras e todo o sync, inclusive o motor. O desktop importa dele direto, de `@sagyou/core/<módulo>` (os arquivos de reexportação de uma linha saíram na 1.15.0). ⚠️ Regra de dinheiro nova vai no core (`finance-actions` para escritas, `finance-views` para leituras e totais), nunca no slice do desktop nem numa tela do celular. ⚠️ **Sem Node no core** (nada de `crypto`, `zlib`, `fs`, `Buffer`, Electron ou React; o ESLint e um teste barram). ⚠️ **Nunca regenere** `packages/core/src/__tests__/fixtures/sync-vectors.json` para um teste passar: ele prova que o formato do sync não mudou. Detalhes no `CLAUDE.md`.
 
 `apps/mobile` é o app Android (Expo). Ele guarda cada registro sincronizado como o próprio payload (`records`) e edita sempre o objeto completo, para não apagar campos que o celular não mostra. ⚠️ A chave de sync e o token ficam **só** no `expo-secure-store`. Para verificar, use o Jest do workspace (`npm test -w @sagyou/mobile`), em que `render`/`fireEvent` são assíncronos. Telas usam só os tokens de `theme.ts` e os componentes de `components/` (nada de hex solto), alvo de toque ≥ 48 dp (`MIN_TOUCH`; `a11y.test.tsx` varre as telas), e todo "Desfazer" é uma edição nova pelo `commit` (`revertCompletion` reverte só coluna, ordem e conclusão). A tag `mobile-vX.Y.Z` gera um Release rascunho com o APK (`--latest=false`, só por organização); o app consulta os releases `mobile-v*` publicados a cada 24 h (`src/update/check.ts`, `src/store/update.ts`) e abre o APK no navegador. O desktop escolhe o maior `vX.Y.Z` publicado (`DesktopReleaseProvider`), nunca o Latest. Num celular autorizado pelo PC aparece a aba **PC** (`src/remote/`, `screens/PcScreen.tsx`): a chave do controle fica só no secure store com biometria, e as notificações (FCM) são opcionais: um sino no cabeçalho abre a tela Notificações (cartões de aprovação + histórico em `prefs` `notifications.history`, sem conteúdo de cartão), os push levam `data.code` em três canais do Android e o "PC sem sinal" nasce no Worker (`watch` + `pc_watch` + agendamento). Regras no `CLAUDE.md`. Versão por app em SemVer (`docs/workflow.md`). Detalhes no `CLAUDE.md`.
 
@@ -105,17 +105,16 @@ src/
     handlers/    # handlers IPC por domínio (extraídos de index.ts)
       window.ts  # window:minimize/maximize/close/is-maximized
       files.ts   # files:*, excel:export, task:images:*
-      backup.ts, memory.ts, code-files.ts, legacy-chat.ts # IPC por domínio
+      backup.ts, memory.ts # IPC por domínio
     store.ts     # persistência SQLite (kanban.db)
     modules/     # implementação agrupada por responsabilidade; index.ts e handlers orquestram
       agent/     # sessões, PTY, worktree, diff, entrega, MCP, arquivo de runs e adapters
-      ai/        # memória, skills, migração de remoção do chat, núcleo de avaliação
-      conversations/ # só legacy-ai-data.ts (normaliza o ai-config.json)
+      ai/        # memória, trava do ai-config.json, núcleo de avaliação
       files/     # anexos, backup, bytes de imagem, parser e runtime MarkItDown
-      code/      # leitura e diff de arquivos de código
+      code/      # só o diff do agente (code-diff.ts)
       search/    # índice FTS5 derivado e consultas
       security/  # senha de bloqueio e validação da configuração
-      web/       # fetch/renderização com política de segurança e links externos
+      web/       # links externos (safeExternalUrl)
       financial/ # consulta de câmbio
     __tests__/   # precisam de @vitest-environment node
   preload/
@@ -134,7 +133,7 @@ src/
       layout/     # Sidebar, TitleBar, Toast
       financial/  # componentes financeiros
       (raiz)      # componentes compartilhados (ModalBase, CancelButton, EmptyState, …)
-    utils/       # dates, money (moneyStr, D), immutable, …
+    utils/       # grafo, imagens, exportação Excel, …
     types/, services/
     __tests__/   # espelha a estrutura acima
 ```
@@ -233,13 +232,16 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    como previsão. No Consolidado, preserve a exclusão de transações espelho e
    a separação por moeda nos dois saldos.
    O resumo mensal automático de Rendimentos usa o dia 1 para entrar no saldo
-   desde o começo do mês. Na carga e na importação, só resumos antigos com
-   categoria, descrição e data de último dia no formato automático migram;
-   a mudança de data entra no histórico e retira conferência bancária.
+   desde o começo do mês. Só a importação de um backup migra resumos antigos com
+   categoria, descrição e data de último dia no formato automático
+   (`upgradeLegacyBackup`, em `packages/core/src/backup-compat.ts`, que concentra
+   tudo que só um backup antigo traz); a mudança de data entra no histórico e
+   retira conferência bancária.
    Banco/app e saldo real são metadata opcional da tabela. Orçamentos e recorrências não são
-   funcionalidades do app: valores antigos desses campos são preservados em `legacyFinancialMetadata`
-   ao carregar, salvar e importar backup, mas não aparecem no modelo ativo nem no Excel. Não remova
-   essa ponte sem migração explícita, ou um autosave pode apagar dados de versões antigas.
+   funcionalidades do app: **só a importação de backup** (`upgradeLegacyBackup`; não a carga do banco
+   nem `normalizeFinancialTable`) descarta `budgets`, `recurringTransactions` e a
+   antiga cópia oculta `legacyFinancialMetadata` (removida na 1.15.0, inclusive do payload de sync
+   da `financial_table`). Não traga essa ponte de volta sem spec.
    Itens em `FinancialTransaction.details` repartem o lançamento principal: a soma deles não pode
    ultrapassar o total e eles nunca entram uma segunda vez nos totais; a análise usa as categorias
    desses itens. Quando o lançamento pai for `Cartão`, os detalhes são subtraídos e somente o
@@ -282,9 +284,9 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
 9. **Nem tudo está no banco.** Em `app.getPath('userData')`: `kanban.db`,
    `files/` (os blobs dos anexos — a tabela só guarda metadados),
    `task-images/` (bytes das imagens de task — só metadata no DB, downscale JPEG
-   no cliente, `migrateTaskImagesToDisk` migra dados legados), `ai-config.json`
+   no cliente), `ai-config.json`
    (**só** configuração de agente: `codeHarness`, `userName`, `reasoningEffort`,
-   chaves desconhecidas; fora de todo backup), `skills/` (`.md`), `agent-runs/`
+   chaves desconhecidas; fora de todo backup), `skills/` (`.md`, não é mais lida nem apagada), `agent-runs/`
    (execuções arquivadas — log + diff congelados, ligadas a `sessionId`/`projectId`),
    `backups/` (snapshots automáticos, de pré-importação e a pasta
    `pre-remocao-chat-*`), `password-security.json`, `general-agent-workspace/` e
@@ -309,12 +311,12 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     `tool_timeout_sec = MCP_CLIENT_TOOL_TIMEOUT_SEC` (`modules/agent/mcp-approval.ts`).
 11. **Ferramenta de leitura que devolve menos do que existe tem que dizer isso**
     (`total`, `truncado`, `proximoInicio`). Sem o número do que ficou de fora, o
-    agente afirma com confiança um total errado. Vale para o MCP e para
-    `ai:code:list`/`:read`, que paginam.
-12. **Leitura de código confina na raiz.** `confineToRoot` em `code-files.ts` é a
-    única barreira entre quem lê e o resto do disco; o walk é assíncrono de
-    propósito (o síncrono travava o event loop do main). Extração por símbolo ou
-    linha é regex best-effort, sem AST.
+    agente afirma com confiança um total errado. Vale para o MCP, que pagina.
+12. **O renderer não manda caminho de disco para uma sessão de agente.** A raiz da
+    sessão vem de `resolveAgentSessionRoot` (caminho confinado às pastas ativas do
+    projeto capturado); `ai:code-agent:run` não aceita mais lista de arquivos, de
+    escrita permitida nem de pastas só de leitura. O escopo do diff final
+    (`validatePatchScope`: `..`, absoluto, symlink) continua valendo.
 13. **Configuração de IA não guarda segredo.** `ai-config.json` não tem mais chave,
     perfil, preço nem modelo de API; `ai:config:set` mescla sobre o arquivo e
     descarta essas chaves nos dois lados, e `ai:config:get` nunca devolve chave.
@@ -328,27 +330,22 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     uma chave vazada seria permanente. Decay arquiva (nunca hard-deleta); memória
     pinada nunca decai. ⚠️ `memory.project_id` é **TEXT puro, NUNCA FK com
     `ON DELETE CASCADE`** — o cascade apagava as memórias do projeto quando
-    `persistAll`/`persistDiff` o reinseriam; `migrateMemoryDropProjectFk` remove o
-    FK. Projeto apagado deixa memórias órfãs (decaem sozinhas). O handoff de
+    `persistAll`/`persistDiff` o reinseriam (a migração que removia o FK de bancos
+    antigos saiu na 1.15.0). Projeto apagado deixa memórias órfãs (decaem sozinhas). O handoff de
     terminal é um breadcrumb **por sessão** (`handoff:<projeto>:<run>`), gravado
     desde o início da sessão, sem LLM e sem referência a conversa; o log completo
     fica só no arquivo da run. Memória
     recuperada é evidência histórica não confiável, nunca instrução.
-15. 🔴 **O chat genérico foi removido e a migração apagou dados de propósito.** Na
-    primeira abertura (antes da janela), `legacy-chat-removal.ts` (em build dev só roda com `SAGYOU_RUN_LEGACY_CHAT_REMOVAL=1`, pois o resto compartilha o userData real): (1) se
-    `legacyChatRemovedAt` existe em `userData/legacy-chat-state.json`, não faz nada; (2) copia por cópia
-    crua, no main, para `userData/backups/pre-remocao-chat-<timestamp>/` as
-    conversas, `chat-images/`, `chat-files/` e o `kanban.db` — falhou, **nada é
-    apagado**; (3) apaga esses itens + `ai-usage-log.json` e `ai-run-metrics.json`;
-    (4) zera `sourceConversationId` e o ponteiro `ler_conversa` nas memórias; (5)
-    sem reconstruir o índice FTS (o `getDb()` já o faz); (6) **por último** tira as 14 chaves de API do
-    `ai-config.json` (arquivo ilegível não é tocado); (7) grava a marca. Passos
-    idempotentes, retomáveis. `legacyChatSnapshotDir` e `legacyChatNoticeDismissedAt`
-    no mesmo arquivo alimentam o aviso do Fleet. ⚠️ Esse estado fica em arquivo
-    próprio, **não** em `settings`: `persistAll` faz `DELETE FROM settings` na
-    primeira gravação de toda sessão e apagaria a marca. **As chaves de API não estão em nenhum backup: a perda
-    é definitiva.** Canais `ai:chat*`, `ai:conversations:*`, `ai:images:*`,
-    `ai:usage:*`, `ai:run-metrics:*` não existem mais; não os re-crie sem spec nova.
+15. 🔴 **O chat genérico foi removido.** A migração que apagou as conversas e as
+    chaves de API (spec `docs/specs/2026-10-24-remover-historico-chat.md`) **saiu do
+    código na 1.15.0**: todos os aparelhos já a tinham rodado. Ficam: a trava de
+    `modules/ai/ai-config.ts` (as 14 chaves de API aposentadas nunca são gravadas nem
+    devolvidas; arquivo ilegível vira cópia `.corrupt-`, nunca é sobrescrito) e, em
+    `userData`, `legacy-chat-state.json` e as pastas `backups/pre-remocao-chat-*`
+    (conversas cruas e cópia do `kanban.db`: dado do usuário, **nunca apague sozinho**).
+    As chaves de API não estão em nenhum backup: a perda é definitiva. Canais
+    `ai:chat*`, `ai:conversations:*`, `ai:images:*`, `ai:usage:*`, `ai:run-metrics:*`
+    não existem mais; não os re-crie sem spec nova.
 16. 🔴 **Importação de backup só conclui depois de todas as fontes serem gravadas.**
     `backup:import` valida formato/versão e segura os blobs em main; o renderer salva
     um snapshot forçado do estado atual em `userData/backups/` antes de persistir store
@@ -448,10 +445,10 @@ Ausente ou desconhecido sempre aparece como indisponível — nunca simule
 compatibilidade nem faça fallback silencioso para outro CLI.
 
 - **O usuário fala com o CLI, no terminal do Fleet.** A sessão abre em branco
-  (`blank: true`): sem formulário e **sem briefing colado**. Sagyou não coordena
-  por outro modelo. O contexto do app chega só pelo MCP, sob demanda do agente. Se
-  `ai:code-agent:run` receber um pedido inicial, o briefing leva objetivo,
-  decisões, arquivos e memórias — sem trechos de conversa.
+  (sempre em branco): sem formulário e **sem briefing colado**. Sagyou não
+  coordena por outro modelo. O contexto do app chega só pelo MCP, sob demanda do
+  agente. `ai:code-agent:run` não recebe mais pedido inicial; as Skills do Sagyou
+  e o briefing foram removidos.
 - **Cada run usa a CLI escolhida em uma sessão PTY real**, pertencente ao main e
   exibida no Fleet por xterm. O renderer só envia entrada e resize validados;
   nunca cria processos.
@@ -491,7 +488,7 @@ compatibilidade nem faça fallback silencioso para outro CLI.
   (o app fechou ou o PC desligou). Fica no máximo 5 handoffs ativos por projeto (e
   por `global`); os mais antigos são arquivados, nunca o fixado nem o de uma run
   viva. `list_active_sessions` mostra as outras sessões vivas (assunto, ações e
-  arquivos do último checkpoint) e o briefing com pedido inicial lista até 3.
+  arquivos do último checkpoint).
   `read_memory` lê o corpo **em páginas** (`offset`, `limit` de 500 a 12000,
   padrão 6000, em pontos de código Unicode; a resposta traz `totalChars`,
   `truncated` e `nextOffset`; argumento errado é recusado antes de procurar a
@@ -502,8 +499,8 @@ compatibilidade nem faça fallback silencioso para outro CLI.
   `update_memory` aceita `expectedUpdatedAt` (o `updatedAt` de `read_memory`) e
   recusa a edição se a memória mudou; com `section` (título Markdown, sem `#`)
   troca só o conteúdo daquela seção (`replaceMemorySection` no core) e exige
-  `expectedUpdatedAt`. Quando há fonte, entram também o assunto (o pedido, ou a primeira
-  escrita MCP aplicada), as decisões passadas pelo chat e as memórias `decisao`
+  `expectedUpdatedAt`. Quando há fonte, entram também o assunto (a primeira
+  escrita MCP aplicada), as memórias `decisao`
   salvas na run, as ações aplicadas pelo MCP e as tasks com cronômetro iniciado e
   não concluídas. Nada vem do log do PTY nem de diff não aplicado; sem fonte, o
   handoff manda consultar a run. O terminal completo continua apenas no arquivo
@@ -545,32 +542,17 @@ tokens de uso único (10 min); a cópia acontece em `files:import`. Um renderer
 comprometido poderia importar qualquer arquivo legível pelo usuário, então não
 dê outro chamador a esse canal nem crie outro que receba caminhos.
 
-`main/modules/web/web-fetch.ts` busca páginas cuja URL **não é confiável** (vem de
-um modelo ou de uma página). Já existe, com testes, e não deve ser afrouxado
-(o canal `ai:web:fetch` segue registrado, sem chamador no renderer hoje):
-
-- só `http`/`https` (allowlist — `file:` leria o disco);
-- redes privadas, loopback, link-local e metadata de nuvem bloqueadas;
-- **redirects seguidos à mão**, com a mesma política reaplicada a cada salto;
-- credenciais embutidas (`user:senha@host`) recusadas;
-- nada do usuário vai junto: sem cookie, sem authorization, sem referer;
-- o parser (`new URL()`) é o único sanitizador — **não** acrescente limpeza de
-  string na frente dele, e não decodifique entidades HTML.
-
-`main/modules/web/web-render.ts` é o irmão que **executa JavaScript** (páginas SPA),
-via `ai:web:fetch` com `render`. Um navegador é uma superfície SSRF muito maior:
-**toda requisição** (documento e sub-recursos) passa pela mesma política `checkUrl`
-via `session.webRequest.onBeforeRequest` — mantenha isso. Sessão efêmera sem
-cookie, sandbox, sem node. A orquestração do `BrowserWindow` **não roda no
-vitest** — verifique no app.
-
-`main/modules/code/code-files.ts` confina todo acesso a arquivo dentro da raiz escolhida
-(`confineToRoot`).
+`ai:web:fetch` (busca de página por URL não confiável) foi removido: nada no renderer
+o chamava. Quem trouxer a web de volta escreve uma spec nova com a política SSRF
+(só `http`/`https`, redes privadas e metadata bloqueadas, redirects à mão, nada do
+usuário na requisição); o histórico do git guarda a versão antiga.
 
 **Links externos:** `main/modules/web/external-links.ts` só deixa `http:`/`https:` sem
 credenciais chegar a `shell.openExternal`; a janela principal bloqueia
 navegação para fora da página do app. Não abra URLs vindas do renderer
-diretamente no handler do sistema operacional.
+diretamente no handler do sistema operacional. O `new URL()` é o único
+sanitizador: não acrescente limpeza de string nem decodificação de entidades
+HTML na frente dele.
 
 ## Testes
 
@@ -591,8 +573,6 @@ diretamente no handler do sistema operacional.
 
 Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
 
-- **`await` em série no `main/modules/code/code-files.ts`** — de propósito. A versão síncrona
-  travava o event loop do main (que também serve o IPC) por ~70ms.
 - **O X esconde a janela (bandeja) em vez de fechar.** `hideOnClose` olha
   `closeToTray` e `isQuitting` (ligado no início do `before-quit`): Sair, instalar
   atualização e o fim de sessão do Windows fecham de verdade, com o salvamento.
@@ -609,10 +589,10 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   celular mostra o mesmo texto; os exemplos de chave são falsos e nunca copiáveis.
 - **As sessões do Fleet ficam em abas no topo.** `SessionTabs` só navega entre runs;
   o xterm vivo continua com `liveTerminals.ts` quando a aba muda.
-- **`AiMemory.sourceConversationId` e a coluna `memory.source_conversation_id`
-  ainda existem**, sempre nulos: a coluna não foi removida para não reconstruir a
-  tabela. `AgentRunMeta.convId` também fica (nulo em runs novas) para runs antigas
-  continuarem listáveis.
+- **`AiMemory.sourceConversationId` foi removido** (1.15.0): bancos existentes
+  mantêm a coluna `memory.source_conversation_id` sem uso, para não reconstruir a
+  tabela, e um banco novo já nasce sem ela. `AgentRunMeta.convId` foi removido: linha antiga só com `convId` é lida sem
+  ele e não é listada (as runs arquivadas expiram em 24 h).
 - **O layout do grafo é uma simulação viva** (`GraphView.tsx` + `utils/graph-layout.ts`):
   o d3-force muta nós, então preserve `positionsRef` ao recriar o grafo e nunca chame
   `sim.tick()` no evento `tick`. Arrastar fixa só durante o gesto; ao soltar, pare e guarde a posição da sessão.
@@ -626,10 +606,10 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   (arestas `tag`, no máximo `MEMORY_TAG_LINK_LIMIT` = 3 por memória, sem handoffs).
 - **Múltiplos cronômetros** (`activeTimers: ActiveTimer[]`, 1 por task) — vários
   timers correm ao mesmo tempo. `startTimer(taskId)` adiciona sem parar os outros;
-  `stopTimer(taskId)` credita só aquele. Espelho legado `activeTimer =
-activeTimers[0]` no `settings` do DB (não viaja no backup); `normalizeTimers`
-  migra o objeto único antigo e faz o commit de tempo em loop no load. ⚠️ Mudança
-  de schema — mantenha a coleção **e** o espelho.
+  `stopTimer(taskId)` credita só aquele. Só `activeTimers` é gravado e lido no
+  `settings` do DB (não viaja no backup); o espelho `activeTimer` saiu na 1.15.0.
+  O load faz o commit de tempo de todos os timers em loop. ⚠️ Versão anterior à
+  1.15.0 aberta sobre um banco gravado por esta não acha o timer rodando.
 - **O diff do agente captura a base _antes_ de rodar** — depois não dá para
   separar o que o agente fez do que o usuário já tinha em andamento.
 - **Runs antigas são snapshots congelados** (`agent-runs.ts`): o log e o diff são

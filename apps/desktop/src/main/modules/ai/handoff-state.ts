@@ -4,7 +4,7 @@ import {
   isRunningHandoffState,
   selectHandoffOverflow,
   type AiMemory
-} from './memory'
+} from '@sagyou/core/memory'
 
 // The wording of a handoff's state lives here once: the builder writes it
 // (terminal-handoff.ts) and the app marks a left-over one interrupted on open.

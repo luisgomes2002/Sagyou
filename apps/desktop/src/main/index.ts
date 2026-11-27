@@ -18,7 +18,7 @@ import {
   type IpcMainEvent,
   type IpcMainInvokeEvent
 } from 'electron'
-import { join, relative, resolve, sep } from 'path'
+import { join, sep } from 'path'
 import {
   readFileSync,
   writeFileSync,
@@ -33,7 +33,6 @@ import {
   rmSync,
   constants
 } from 'fs'
-import * as codeFileFs from 'fs'
 import { homedir, hostname } from 'os'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
@@ -79,11 +78,6 @@ import {
   CODE_EXECUTOR_MCP_PERMISSIONS,
   prepareAgentMcpSession
 } from './modules/agent/agent-mcp-session'
-import {
-  buildExternalAgentBrief,
-  scrubExternalBriefSecrets,
-  withoutRunningHandoffs
-} from './modules/agent/agent-briefing'
 import { buildTerminalHandoff } from './modules/agent/terminal-handoff'
 import { createSessionCheckpoints, selectActiveSessions } from './modules/agent/session-checkpoint'
 import { archiveHandoffOverflow } from './modules/ai/handoff-state'
@@ -103,34 +97,16 @@ import {
   loadData,
   saveData,
   currentSyncGeneration,
-  eventsForEntity,
   rebuildSearchIndex,
   searchGlobalIndex,
   getGlobalSearchIndexHit,
-  copyDatabaseTo,
-  scrubMemoryConversationLinks,
   closeDatabase,
   listProjectCodeRoots
 } from './store'
-import {
-  hasLegacyApiConfig,
-  runLegacyChatRemoval,
-  stripAiConfigFile,
-  stripLegacyApiConfig
-} from './modules/ai/legacy-chat-removal'
-import { createLegacyChatState } from './modules/ai/legacy-chat-state'
-import {
-  registerLegacyChatHandlers,
-  shouldRunLegacyChatRemoval,
-  startLegacyChatRemoval
-} from './handlers/legacy-chat'
+import { agentOnlyConfig as agentOnlyConfigOf } from './modules/ai/ai-config'
 import * as memoryStore from './store'
-import * as memoryRules from './modules/ai/memory'
+import * as memoryRules from '@sagyou/core/memory'
 import { registerMemoryHandlers } from './handlers/memory'
-import { confineToRoot } from './modules/code/code-files'
-import * as codeFiles from './modules/code/code-files'
-import { fetchWeb } from './modules/web/web-fetch'
-import { renderWeb } from './modules/web/web-render'
 import { getExchangeRate } from './modules/financial/financial-exchange'
 import {
   EXTERNAL_PERMISSIONS,
@@ -171,22 +147,12 @@ import {
   pruneRuns,
   runOwnership,
   runsForSession,
-  taskLabel,
   type AgentRunMeta,
   type AgentRunSnapshot
 } from './modules/agent/agent-runs'
-import {
-  listSkills,
-  saveSkill,
-  deleteSkill,
-  importSkill as importSkillDialog,
-  skillsDir
-} from './modules/ai/skills'
 import { createManagedWindow, registerWindowHandlers, type ManagedWindow } from './handlers/window'
 import { registerFilesHandlers } from './handlers/files'
 import { registerBackupHandlers } from './handlers/backup'
-import { normalizeLegacyAIConfig } from './modules/conversations/legacy-ai-data'
-import { registerCodeFilesHandlers } from './handlers/code-files'
 import { registerSyncHandlers } from './handlers/sync'
 import { registerUpdateHandlers } from './handlers/update'
 import {
@@ -230,7 +196,6 @@ import { createControlClient } from '@sagyou/core/control/client'
 import {
   esp32Key as remoteEsp32Key,
   loadRemoteConfig,
-  migrateServerNames,
   pcPrivateKey as remotePcPrivateKey,
   remoteConfigFileName,
   saveRemoteConfig,
@@ -565,16 +530,9 @@ const sagyouMcp = startSagyouMcpBroker({
  * at a time. Now the app can host multiple concurrent runs in different
  * directories, each with its own log, base, approval queue, and usage counter.
  */
-interface ReadOnlyRoot {
-  id: string
-  nome: string
-  path: string
-}
-
 interface CodeRunState {
   id: string
   dir: string
-  convId: string | null
   sessionId: string | null
   /** Immutable application scope captured when the terminal was created. */
   projectId: string | null
@@ -587,8 +545,6 @@ interface CodeRunState {
   localInstructions: string[]
   localSkills: string[]
   task: string
-  /** Scope decisions the chat settled before launch; they go into the handoff. */
-  decisions: string[]
   startedAt: number
   /** Set by stopCodeAgent; the loop checks this between steps. */
   abort: boolean
@@ -616,10 +572,6 @@ interface CodeRunState {
   /** The isolated run finished, but its patch could not be applied to the original tree. */
   worktreeMergeError: string | null
   /** Child process of an external harness, so Stop can terminate it immediately. */
-  /** Exact relative paths this run may write; absent means the project root. */
-  allowedWritePaths?: string[]
-  /** Read-only references selected for this run; never a write or shell root. */
-  readOnlyRoots: ReadOnlyRoot[]
   externalChild: AgentPty | null
   /** A real TTY session accepts user input until the harness exits. */
   interactive: boolean
@@ -820,8 +772,8 @@ const sessionCheckpoints = createSessionCheckpoints({
       startedAt: run.startedAt,
       input: {
         request: run.task,
-        subject: run.task === BLANK_SESSION_TASK ? activity.subject : run.task,
-        decisions: [...run.decisions, ...activity.decisions],
+        subject: activity.subject,
+        decisions: activity.decisions,
         actions: activity.actions,
         pending: activity.pending,
         changedFiles: files
@@ -1108,74 +1060,6 @@ interface ExternalHarnessLaunch {
   args: string[]
 }
 
-/**
- * External CLIs run in an isolated worktree. Their flags either make extra
- * directories writable or differ by harness, so never hand them raw reference
- * paths. A bounded snapshot gives them real project context without expanding
- * their filesystem authority.
- */
-async function readOnlyReferenceBrief(roots: ReadOnlyRoot[]): Promise<string> {
-  const candidates = ['README.md', 'GUIDE.md', 'CLAUDE.md', 'package.json', 'manifest.json']
-  const sections: string[] = []
-  for (const root of roots) {
-    const files: string[] = []
-    for (const name of candidates) {
-      const file = join(root.path, name)
-      if (!existsSync(file) || !statSync(file).isFile()) continue
-      try {
-        const content = await readFile(file, 'utf-8')
-        files.push('### ' + name + '\n' + content.slice(0, 4_000))
-      } catch {
-        /* unreadable references are simply omitted from the bounded briefing */
-      }
-    }
-    sections.push(
-      '## REFERÊNCIA SOMENTE DE LEITURA: ' +
-        root.nome +
-        '\n' +
-        (files.join('\n\n') || 'Sem arquivos-base legíveis.')
-    )
-  }
-  return sections.join('\n\n').slice(0, 18_000)
-}
-
-/**
- * An external harness gets no data snapshot. It must request current data from
- * the run-scoped MCP capability, which retains the financial profile and
- * approves writes while letting the user query other projects explicitly.
- * Passing `loadData()` here would silently bypass those boundaries in the prompt.
- */
-function sagyouContextBrief(projectId: string | null | undefined): string {
-  try {
-    const project = projectId ? loadData().projects.find((item) => item.id === projectId) : null
-    return project
-      ? `## CONTEXTO DO SAGYOU\nProjeto inicial: ${project.name}. Use list_projects no MCP Sagyou para consultar outros projetos por ID.`
-      : '## CONTEXTO DO SAGYOU\nSessão geral. Use list_projects no MCP Sagyou para descobrir projetos e consultar seus dados.'
-  } catch {
-    return ''
-  }
-}
-
-/**
- * Local Sagyou skills are explicit user-authored briefing material, so an
- * external executor can use them without receiving the skills directory (or
- * any extra filesystem authority). Keep the hand-off bounded and sanitize it
- * together with the rest of the external brief.
- */
-function sagyouSkillsBrief(): string {
-  try {
-    const skills = listSkills(skillsPath()).slice(0, 20)
-    if (!skills.length) return ''
-    const body = skills
-      .map((skill) => `### /${skill.name}\n${skill.body.slice(0, 4_000)}`)
-      .join('\n\n')
-      .slice(0, 20_000)
-    return `## SKILLS LOCAIS DO SAGYOU\nUse estas instruções quando forem pertinentes à tarefa.\n\n${body}`
-  } catch {
-    return ''
-  }
-}
-
 /** A persistent terminal uses the harness normal TUI in its isolated worktree. */
 function buildTerminalHarnessLaunch(
   harness: ExternalHarnessId,
@@ -1200,7 +1084,7 @@ interface AIConfig {
 
 /** The only shape this process ever hands out or writes: no API-chat keys. */
 function agentOnlyConfig(value: unknown): AIConfig {
-  return stripLegacyApiConfig(normalizeLegacyAIConfig(value)).config as AIConfig
+  return agentOnlyConfigOf(value) as AIConfig
 }
 
 const aiConfigPath = (): string => join(app.getPath('userData'), 'ai-config.json')
@@ -1327,8 +1211,7 @@ function saveAIConfig(config: unknown): void {
 /**
  * An unreadable ai-config.json reads as empty, so the next save would replace
  * it with defaults and destroy whatever was recoverable in it. Keep a copy
- * beside it first (the migration leaves such a file untouched for the same
- * reason).
+ * beside it first.
  */
 function keepUnreadableAIConfig(): void {
   const path = aiConfigPath()
@@ -1343,7 +1226,7 @@ function keepUnreadableAIConfig(): void {
 // --- Task images (files under userData/task-images, named <id><ext>) ---
 //
 // Same on-disk shape as file attachments (files/), so safeAttachmentName guards
-// the id/ext. The bytes were moved off the DB (see migrateTaskImagesToDisk).
+// the id/ext. The bytes live on disk, never in the DB.
 
 const taskImagesDir = (): string => join(app.getPath('userData'), 'task-images')
 
@@ -1419,13 +1302,10 @@ async function archiveAgentRun(runId: string, exitCode: number): Promise<AgentRu
     const diff = run.base ? await diffSince(run.base) : null
     const snapshot: AgentRunSnapshot = {
       id: run.id,
-      convId: run.convId,
       sessionId: run.sessionId,
       projectId: run.projectId,
       agent: run.agent,
       dir: run.dir,
-      allowedWritePaths: run.allowedWritePaths,
-      readOnlyRoots: run.readOnlyRoots,
       task: run.task,
       startedAt: run.startedAt,
       endedAt: Date.now(),
@@ -1516,8 +1396,8 @@ function persistTerminalHandoff(
           status,
           result,
           changedFiles: files,
-          subject: run.task === BLANK_SESSION_TASK ? activity.subject : run.task,
-          decisions: [...run.decisions, ...activity.decisions],
+          subject: activity.subject,
+          decisions: activity.decisions,
           actions: activity.actions,
           pending: activity.pending
         },
@@ -1536,10 +1416,6 @@ function persistTerminalHandoff(
     /* A continuity note must never turn a completed terminal run into a failure. */
   }
 }
-
-// --- Skills (.md files in userData/skills/) ---
-
-const skillsPath = (): string => skillsDir(app.getPath('userData'))
 
 // This machine's tray and lock preferences (userData/desktop-prefs.json), read in whenReady.
 let desktopPrefs: DesktopPrefs | null = null
@@ -1697,36 +1573,6 @@ app.whenReady().then(() => {
 
   const filesDir = join(app.getPath('userData'), 'files')
   if (!existsSync(filesDir)) mkdirSync(filesDir)
-
-  // Migrate old ai-templates.json to per-file skills (one .md = one skill).
-  // Templates were a flat JSON array; skills are individual .md files the model
-  // can call with /skill-name.  Run once: after migration the .json is renamed
-  // to .bak so it never runs again.
-  const templatesPath = join(app.getPath('userData'), 'ai-templates.json')
-  if (existsSync(templatesPath)) {
-    try {
-      const raw = readFileSync(templatesPath, 'utf-8')
-      const parsed: unknown = JSON.parse(raw)
-      const entries: { name?: string; body?: string }[] = Array.isArray(parsed) ? parsed : []
-      const dir = skillsDir(app.getPath('userData'))
-      let migrated = 0
-      for (const t of entries) {
-        const name = (t.name ?? '').trim()
-        const body = (t.body ?? '').trim()
-        if (!name || !body) continue
-        const res = saveSkill(dir, { name, body })
-        if ('skill' in res) migrated++
-      }
-      if (migrated > 0) log.info('app', 'skills_migrated', { count: migrated })
-    } catch (_) {
-      /* best-effort — a corrupt json is silently skipped */
-    }
-    try {
-      renameSync(templatesPath, templatesPath + '.bak')
-    } catch (_) {
-      /* if rename fails (e.g. permissions), leave it — worst case it tries next launch */
-    }
-  }
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
@@ -2224,19 +2070,6 @@ app.whenReady().then(() => {
     })
     const rcDeps = { manager, platform: process.platform }
     rcManager = manager
-    // A file from before the Sagyou managed the servers: its names become
-    // entries once, saved right away (spec 2026-11-09, "Dados").
-    if (remoteConfig.legacyServerNames.length > 0) {
-      const count = remoteConfig.legacyServerNames.length
-      try {
-        const projects = listProjectCodeRoots().map((p) => ({ id: p.id, name: p.name }))
-        const { config, dropped } = migrateServerNames(remoteConfig, projects)
-        saveRemote(config)
-        log.info('remote', 'server_migrated', { count, dropped })
-      } catch {
-        log.warn('remote', 'server_migrate_failed')
-      }
-    }
     registerRcServerHandlers(ipcMain, rcDeps)
     let emitRemote: () => void = () => {}
     const service = createRemoteService({
@@ -2382,11 +2215,6 @@ app.whenReady().then(() => {
     onReplaced: () => sessionCheckpoints.resetAll()
   })
 
-  // Entity lineage: query the event log for one entity's history.
-  ipcMain.handle('ai:lineage:list', (_, entityType: string, entityId: string) =>
-    eventsForEntity(entityType, entityId)
-  )
-
   // Launch a native agent in a project root or the private general workspace. The renderer must
   // have obtained user approval before calling this (it writes files / runs
   // commands). Output is streamed back via 'ai:code-agent:output'.
@@ -2396,26 +2224,12 @@ app.whenReady().then(() => {
       _,
       request: {
         path: string
-        task: string
-        /**
-         * A session with no initial request: the CLI opens on its own screen and
-         * receives no briefing. Ignored when a task is given.
-         */
-        blank?: boolean
-        files?: string[]
-        allowedWritePaths?: string[]
-        /** Absolute directories selected by the user for read-only reference. */
-        readOnlyRoots?: ReadOnlyRoot[]
-        /** Scope decisions already agreed with the user, honoured without re-deciding. */
-        decisoes?: string[]
         /** The terminal session that owns the run, so it can be reopened later. */
         sessionId?: string
-        /** The project whose memory to brief the agent with (shared with the chat). */
+        /** The project that scopes the run's MCP capability and its code root. */
         projectId?: string | null
         /** Financial profile captured with the project scope. */
         financialProfileId?: string
-        /** Chat-coordinated requests may only hand off to a terminal executor. */
-        coordinated?: boolean
         /** Start in auto-approval mode — approve() returns true without IPC. */
         autoApprove?: boolean
       }
@@ -2521,91 +2335,6 @@ app.whenReady().then(() => {
       }
       const effectiveDir = worktreeDir ?? dir
       const localHarnessContext = discoverHarnessLocalContext(effectiveDir)
-      const task = typeof request.task === 'string' ? request.task.trim() : ''
-      const blankSession = !task && request.blank === true
-      if (!task && !blankSession) {
-        await releaseFailedStart()
-        return { success: false, error: 'Tarefa vazia' }
-      }
-      // Files the caller pinned so the agent skips discovery. Confine each to the
-      // root (same barrier as the read tools — a path is the model's, so it may
-      // be `../../etc`), and drop anything that escapes or doesn't exist rather
-      // than handing the agent a bogus target. An empty/all-invalid list falls
-      // back to the discovery path, so this can only speed things up, never break.
-      // Kept alongside the accepted list so the banner below can name what was
-      // dropped. A silently discarded path is the failure mode worth surfacing:
-      // it doesn't error, it just costs the user the slow discovery path.
-      const requestedFiles = Array.isArray(request.files)
-        ? request.files.filter((f): f is string => typeof f === 'string' && f.trim() !== '')
-        : []
-      const files = requestedFiles
-        .map((f) => confineToRoot(effectiveDir, f))
-        .filter((f): f is string => f !== null && existsSync(f) && statSync(f).isFile())
-      const droppedFiles = requestedFiles.filter((f) => {
-        const abs = confineToRoot(effectiveDir, f)
-        return abs === null || !existsSync(abs) || !statSync(abs).isFile()
-      })
-      // Unlike pinned input files, an allowed output may not exist yet. It is
-      // still confined to the root and later enforced by writeFileTool.
-      const requestedAllowedPaths = Array.isArray(request.allowedWritePaths)
-        ? request.allowedWritePaths.filter(
-            (f): f is string => typeof f === 'string' && f.trim() !== ''
-          )
-        : []
-      const allowedWritePaths = requestedAllowedPaths
-        .map((requestedPath) => {
-          const absolutePath = confineToRoot(effectiveDir, requestedPath)
-          if (!absolutePath) return null
-          const isRoot =
-            /[\\/]$/.test(requestedPath) ||
-            (existsSync(absolutePath) && statSync(absolutePath).isDirectory())
-          const path = relative(effectiveDir, absolutePath)
-          return isRoot ? path + '/' : path
-        })
-        .filter((f): f is string => f !== null)
-        .filter((f) => f !== '')
-      const requestedReadOnlyRoots = Array.isArray(request.readOnlyRoots)
-        ? request.readOnlyRoots
-        : []
-      const readOnlyRoots = requestedReadOnlyRoots
-        .filter(
-          (item): item is ReadOnlyRoot =>
-            !!item &&
-            typeof item.id === 'string' &&
-            typeof item.nome === 'string' &&
-            typeof item.path === 'string'
-        )
-        .map((item) => ({
-          ...item,
-          id: item.id.trim(),
-          nome: item.nome.trim(),
-          path: resolve(item.path)
-        }))
-        .filter(
-          (item) =>
-            item.id && item.nome && existsSync(item.path) && statSync(item.path).isDirectory()
-        )
-      if (requestedReadOnlyRoots.length !== readOnlyRoots.length) {
-        await releaseFailedStart()
-        return { success: false, error: 'Uma ou mais referências de leitura são inválidas.' }
-      }
-      if (
-        requestedAllowedPaths.length &&
-        allowedWritePaths.length !== requestedAllowedPaths.length
-      ) {
-        await releaseFailedStart()
-        return {
-          success: false,
-          error: 'Um ou mais caminhos permitidos estão fora da raiz do projeto.'
-        }
-      }
-      // Scope decisions the chat already settled with the user — plain strings,
-      // no path involved, so just clean and pass them into the prompt.
-      const decisoes = Array.isArray(request.decisoes)
-        ? request.decisoes
-            .filter((d): d is string => typeof d === 'string' && d.trim() !== '')
-            .map((d) => d.trim())
-        : []
       // Create the run state and register it — a new run starts fresh.
       // (runId foi criado acima, antes do worktree)
       const run: CodeRunState = {
@@ -2619,8 +2348,7 @@ app.whenReady().then(() => {
         harness,
         localInstructions: localHarnessContext.instructions,
         localSkills: localHarnessContext.skills,
-        task: blankSession ? BLANK_SESSION_TASK : taskLabel(task),
-        decisions: decisoes,
+        task: BLANK_SESSION_TASK,
         startedAt: Date.now(),
         abort: false,
         log: '',
@@ -2637,8 +2365,6 @@ app.whenReady().then(() => {
         autoApprove: typeof request.autoApprove === 'boolean' ? request.autoApprove : false,
         worktreeDir: worktreeDir,
         worktreeMergeError: null,
-        allowedWritePaths: allowedWritePaths.length ? allowedWritePaths : undefined,
-        readOnlyRoots,
         externalChild: null,
         interactive,
         terminalCols: 100,
@@ -2657,9 +2383,7 @@ app.whenReady().then(() => {
         send('ai:code-agent:output', { runId, chunk })
       }
 
-      // Opening banner: the REAL model in use (task 11), and which files were
-      // pinned vs left for the agent to discover with buscar_no_codigo.
-      const rel = files.map((f) => relative(effectiveDir, f) || f)
+      // Opening banner: the REAL model in use.
       emit(
         '[' +
           externalHarness.command +
@@ -2672,93 +2396,16 @@ app.whenReady().then(() => {
           externalHarness.command +
           '] permissões do CLI próprio; alterações ficam no worktree até sua aprovação.\n'
       )
-      emit(
-        rel.length
-          ? `[sagyou] ${rel.length} arquivo(s) indicado(s) — busca desativada, conteúdo já no contexto:\n` +
-              rel.map((f) => `  · ${f}\n`).join('')
-          : '[sagyou] nenhum arquivo indicado — o agente vai localizá-los com buscar_no_codigo.\n'
-      )
-      if (droppedFiles.length) {
-        emit(
-          `[sagyou] ${droppedFiles.length} caminho(s) descartado(s) (fora da raiz ou inexistente):\n` +
-            droppedFiles.map((f) => `  · ${f}\n`).join('')
-        )
-      }
-      if (decisoes.length) {
-        emit(
-          `[sagyou] ${decisoes.length} decisão(ões) já tomada(s) — o agente deve respeitá-las:\n` +
-            decisoes.map((d) => `  · ${d}\n`).join('')
-        )
-      }
-
       if (externalHarness.path && worktreeDir) {
-        const launch = buildTerminalHarnessLaunch(harness, task, effectiveDir)
-        const referenceBrief = await readOnlyReferenceBrief(readOnlyRoots)
-        const appBrief = sagyouContextBrief(run.projectId)
-        const localSkillsBrief = sagyouSkillsBrief()
-        let relevantMemories: import('./modules/ai/memory').AiMemory[] = []
-        let recentHandoffs: import('./modules/ai/memory').AiMemory[] = []
-        try {
-          // Search is ranking-only and does not touch decay counters. Full data
-          // still stays behind MCP once the executor needs to investigate.
-          relevantMemories = withoutRunningHandoffs(
-            memoryStore
-              .searchMemories({ projectId: run.projectId, term: task, limit: 5 })
-              .map((hit) => hit.memory)
-          )
-          // Nothing matched the request's words: the last handoffs say what came before.
-          if (!relevantMemories.length)
-            recentHandoffs = withoutRunningHandoffs(
-              memoryRules.selectRecentMemories(memoryStore.listMemories(), {
-                projectId: run.projectId,
-                allProjects: false,
-                type: 'handoff',
-                status: 'active',
-                offset: 0,
-                // Running handoffs are dropped below, so ask for more than the two shown.
-                limit: 8
-              }).items
-            )
-        } catch {
-          /* Briefing context is best-effort; a launch must remain available. */
-        }
-        const agentBrief = buildExternalAgentBrief({
-          objective: task,
-          decisions: decisoes,
-          files: rel,
-          memories: relevantMemories,
-          recentHandoffs,
-          // Only a run with a project gets the block; a general session uses the tool.
-          activeSessions: run.projectId
-            ? activeSessionViews({ projectId: run.projectId, excludeRunId: run.id }).map(
-                (session) => ({ assunto: session.assunto, arquivos: session.arquivos })
-              )
-            : []
-        })
-        // A blank session starts the CLI on its normal screen: pasting a briefing
-        // (skills, MCP hints) would run a turn nobody asked for.
-        const scopedTask = blankSession
-          ? ''
-          : scrubExternalBriefSecrets(
-              [
-                agentBrief,
-                referenceBrief,
-                appBrief,
-                localSkillsBrief,
-                localHarnessContext.instructions.length || localHarnessContext.skills.length
-                  ? `## INSTRUÇÕES LOCAIS\nConsulte no worktree as instruções nativas detectadas: ${[...localHarnessContext.instructions, ...localHarnessContext.skills].join(', ')}. Não copie seu conteúdo para logs ou respostas sem necessidade.`
-                  : '',
-                'Use esta worktree para alterações de código. Para dados do Sagyou, use list_projects no MCP e consulte outros projetos quando necessário. Ao terminar, explique brevemente o que fez.'
-              ]
-                .filter(Boolean)
-                .join('\n\n')
-            )
+        // A session always opens blank: the CLI starts on its own screen and learns about
+        // Sagyou through MCP on demand. Nothing is pasted, because that would run a turn nobody asked for.
+        const launch = buildTerminalHarnessLaunch(harness, '', effectiveDir)
         const externalWorktree = worktreeDir
         const externalRuntime = { env: process.env }
         // A capability token is not an identifier: use 256 bits of entropy and
         // keep it only in the spawned executor environment, never in UI/logs.
         const mcpToken = randomBytes(32).toString('base64url')
-        const baseExternalArgs = buildTerminalHarnessLaunch(harness, scopedTask, effectiveDir).args
+        const baseExternalArgs = launch.args
         const mcpSession = await prepareAgentMcpSession({
           broker: sagyouMcp,
           token: mcpToken,
@@ -2811,11 +2458,7 @@ app.whenReady().then(() => {
               base: run.base?.base
             })
             const fullPatch = changes.patch
-            const scope = await validatePatchScope(
-              externalWorktree,
-              changes.changedPaths,
-              run.allowedWritePaths
-            )
+            const scope = await validatePatchScope(externalWorktree, changes.changedPaths)
             if (!scope.allowed) {
               run.worktreeMergeError =
                 'o agente alterou arquivo fora do escopo permitido: ' +
@@ -3074,7 +2717,6 @@ app.whenReady().then(() => {
         id: r.id,
         dir: r.dir,
         task: r.task,
-        convId: r.convId,
         sessionId: r.sessionId,
         projectId: r.projectId,
         financialProfileId: r.financialProfileId,
@@ -3084,8 +2726,6 @@ app.whenReady().then(() => {
         worktreeDir: r.worktreeDir,
         localInstructions: r.localInstructions,
         localSkills: r.localSkills,
-        allowedWritePaths: r.allowedWritePaths,
-        readOnlyRoots: r.readOnlyRoots,
         interactive: r.interactive,
         terminalCols: r.terminalCols,
         terminalRows: r.terminalRows,
@@ -3178,18 +2818,6 @@ app.whenReady().then(() => {
     return { path: filePaths[0] }
   })
 
-  registerCodeFilesHandlers(ipcMain, { files: codeFiles, fs: codeFileFs })
-
-  // Fetch a page for the assistant. The URL comes from the model, so it is
-  // untrusted input — ./web-fetch does the vetting (http(s) only, no local or
-  // private addresses, re-checked on every redirect), caps the read and bounds
-  // the wait. With `render`, ./web-render loads it in a headless browser instead
-  // (for SPA pages that need JS), applying the SAME policy to every request the
-  // page makes — see web-render.ts for the guard and its residual risks.
-  ipcMain.handle('ai:web:fetch', (_, url: string, render?: boolean) =>
-    render ? renderWeb(url) : fetchWeb(url)
-  )
-
   // Exchange rate from AwesomeAPI (primary) or Frankfurter (fallback).
   // Cached for 24h in userData/financial-rates.json.
   // Returns { rate: string, date: string, source: 'awesomeapi'|'frankfurter'|'cache'|'identity' }
@@ -3202,84 +2830,21 @@ app.whenReady().then(() => {
     }
   })
 
-  ipcMain.handle('ai:skills:list', () => listSkills(skillsPath()))
+  createWindow()
+  // Always there, even with "close hides" off: "Bloquear agora" and "Sair" live in it.
+  createTray()
+  // In the background: the window never waits for the network.
+  appUpdater?.start()
+  // Sync runs locked too: pushes, pulls, applies remote changes to SQLite and
+  // obeys a remote wipe on the password screen; the renderer reads them on
+  // its first store:load. Started after the update check so the hold applies.
+  syncStarted = true
+  syncEngine?.start()
 
-  ipcMain.handle('ai:skills:save', (_, input: { name: string; body: string; oldName?: string }) => {
-    const res = saveSkill(skillsPath(), input)
-    if ('error' in res) return res
-    return { skill: res.skill }
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    else managedWindow?.show()
   })
-
-  ipcMain.handle('ai:skills:delete', (_, name: string) => {
-    deleteSkill(skillsPath(), name)
-  })
-
-  ipcMain.handle('ai:skills:import', async () => {
-    return importSkillDialog(skillsPath())
-  })
-
-  // Outside SQLite on purpose: persistAll() empties `settings` on a session's first save.
-  const legacyState = createLegacyChatState(app.getPath('userData'))
-  registerLegacyChatHandlers(ipcMain, {
-    readSetting: legacyState.read,
-    writeSetting: legacyState.write,
-    now: () => new Date()
-  })
-
-  // The chat's data is removed before any window exists. A failure is logged,
-  // never fatal. Dev runs skip it unless opted in: only the database file has a
-  // dev suffix, so the rest of this migration would hit the real user data.
-  const openWindows = (): void => {
-    createWindow()
-    // Always there, even with "close hides" off: "Bloquear agora" and "Sair" live in it.
-    createTray()
-    // In the background: the window never waits for the network.
-    appUpdater?.start()
-    // Sync runs locked too: pushes, pulls, applies remote changes to SQLite and
-    // obeys a remote wipe on the password screen; the renderer reads them on
-    // its first store:load. Started after the update check so the hold applies.
-    syncStarted = true
-    syncEngine?.start()
-
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow()
-      else managedWindow?.show()
-    })
-  }
-  if (
-    !shouldRunLegacyChatRemoval({
-      isDev: is.dev,
-      optIn: process.env.SAGYOU_RUN_LEGACY_CHAT_REMOVAL
-    })
-  ) {
-    log.warn('app', 'legacy_chat_removal_skipped', {
-      msg: 'dev build: removal skipped (set SAGYOU_RUN_LEGACY_CHAT_REMOVAL=1 to run it)'
-    })
-    openWindows()
-  } else {
-    void startLegacyChatRemoval({
-      run: () =>
-        runLegacyChatRemoval({
-          userDataDir: app.getPath('userData'),
-          getMarker: () => {
-            const marker = legacyState.read('legacyChatRemovedAt')
-            return typeof marker === 'string' && marker ? marker : null
-          },
-          setMarker: (iso) => legacyState.write('legacyChatRemovedAt', iso),
-          copyDatabase: copyDatabaseTo,
-          scrubMemories: scrubMemoryConversationLinks,
-          hasLegacyConfig: () => hasLegacyApiConfig(aiConfigPath()),
-          getSnapshotDir: () => {
-            const dir = legacyState.read('legacyChatSnapshotDir')
-            return typeof dir === 'string' && dir ? dir : null
-          },
-          setSnapshotDir: (dir) => legacyState.write('legacyChatSnapshotDir', dir),
-          stripAiConfig: () => stripAiConfigFile(aiConfigPath()),
-          now: () => new Date()
-        }),
-      warn: (message) => log.warn('app', 'legacy_chat', { msg: message })
-    }).finally(openWindows)
-  }
 })
 
 app.on('window-all-closed', () => {

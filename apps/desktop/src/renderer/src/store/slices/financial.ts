@@ -10,10 +10,10 @@ import type {
   ShoppingItem,
   YieldEntry,
   Currency
-} from '../../types'
-import { DEFAULT_FINANCIAL_PROFILE_ID } from '../../types'
-import { applyFinancialTransactionEdit } from '../../utils/financialRecord'
-import { todayLocalISO } from '../../utils/dates'
+} from '@sagyou/core/types'
+import { DEFAULT_FINANCIAL_PROFILE_ID } from '@sagyou/core/types'
+import { applyFinancialTransactionEdit } from '@sagyou/core/financialRecord'
+import { todayLocalISO } from '@sagyou/core/dates'
 
 export interface FinancialSlice {
   lists: FinancialTable[]

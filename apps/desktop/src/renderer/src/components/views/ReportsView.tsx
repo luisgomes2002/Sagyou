@@ -7,13 +7,13 @@ import {
   differenceInCalendarWeeks,
   format
 } from 'date-fns'
-import type { Project, Task, Sprint, Habit } from '../../types'
-import { PRIORITY_CONFIG } from '../../types'
+import type { Project, Task, Sprint, Habit } from '@sagyou/core/types'
+import { PRIORITY_CONFIG } from '@sagyou/core/types'
 import { computeSprintVelocity } from '../../utils/reports'
-import { isDoneColumn } from '../../utils/columns'
+import { isDoneColumn } from '@sagyou/core/columns'
 import { HEATMAP_COLORS, heatColor, buildCountMap, buildHeatmapGrid } from '../../utils/heatmap'
-import { computeHabitSummary } from '../../utils/habits'
-import { computeDueDateData } from '../../utils/dueDates'
+import { computeHabitSummary } from '@sagyou/core/habits'
+import { computeDueDateData } from '@sagyou/core/dueDates'
 import { computeTagData } from '../../utils/tags'
 
 const MONTH_ABBR = [

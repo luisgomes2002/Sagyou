@@ -1,4 +1,4 @@
-import type { MemoryType } from './memory'
+import type { MemoryType } from '@sagyou/core/memory'
 
 /** Which memories a search may reach, as the SQL layer wants it. */
 export interface MemorySearchScope {

@@ -2,7 +2,7 @@
 // renderer takes it without saving (it is already in the database) and sends
 // the generation with its next save, so main can tell a stale save apart.
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest'
-import type { Task } from '../../types'
+import type { Task } from '@sagyou/core/types'
 import type { RemoteChanges, useKanbanStore as UseKanbanStore } from '../../store/kanban'
 
 const mocks = vi.hoisted(() => ({

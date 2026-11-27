@@ -1,8 +1,8 @@
 ﻿import { useState, useMemo } from 'react'
 import type { CSSProperties } from 'react'
 import { useKanbanStore } from '../../store/kanban'
-import type { TimeBlock, TimeBlockBorderStyle, Routine } from '../../types'
-import { TIME_BLOCK_COLORS } from '../../types'
+import type { TimeBlock, TimeBlockBorderStyle, Routine } from '@sagyou/core/types'
+import { TIME_BLOCK_COLORS } from '@sagyou/core/types'
 import {
   addDays,
   addMonths,

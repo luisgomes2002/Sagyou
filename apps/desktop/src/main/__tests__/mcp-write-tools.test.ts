@@ -15,7 +15,7 @@ import {
 } from '../modules/agent/mcp-write-tools'
 import { MCP_MEMORY_WRITE_TOOLS, MCP_RENDERER_WRITE_TOOLS } from '../modules/agent/mcp-write-types'
 import { MCP_PERMISSIONS } from '../modules/agent/sagyou-mcp'
-import type { AiMemory } from '../modules/ai/memory'
+import type { AiMemory } from '@sagyou/core/memory'
 
 const APPROVAL_LIST = [
   'archive_project',
@@ -204,7 +204,6 @@ describe('prepareMemoryWrite', () => {
     tags: [],
     pinned: false,
     source: 'modelo',
-    sourceConversationId: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     lastAccessedAt: '2026-01-01T00:00:00.000Z',

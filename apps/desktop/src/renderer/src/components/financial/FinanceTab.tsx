@@ -1,6 +1,6 @@
 ﻿import { useState } from 'react'
 import Decimal from 'decimal.js'
-import type { FinancialTable, FinancialTransaction, FinancialGoal } from '../../types'
+import type { FinancialTable, FinancialTransaction, FinancialGoal } from '@sagyou/core/types'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { useKanbanStore } from '../../store/kanban'
 import {
@@ -10,7 +10,7 @@ import {
   D,
   tableBalance,
   todayISO
-} from './shared'
+} from '@sagyou/core/finance'
 import { GoalModal, FinancialGoalCard } from './FinancialGoalCard'
 import { GoalHistoryModal } from './GoalHistoryModal'
 import { AddTransactionRow, TransactionRow } from './TransactionRow'

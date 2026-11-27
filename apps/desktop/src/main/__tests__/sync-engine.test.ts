@@ -50,28 +50,23 @@ import {
   type IncomingRecord,
   type StoredSyncVersion,
   type SyncableState
-} from '../modules/sync/sync-apply'
-import {
-  encodeBatch,
-  recordKey,
-  type OutgoingRow,
-  type WireRecord
-} from '../modules/sync/sync-batch'
-import { deriveKeys, keyProof, sealBatch } from '../modules/sync/sync-crypto'
+} from '@sagyou/core/sync/apply'
+import { encodeBatch, recordKey, type OutgoingRow, type WireRecord } from '@sagyou/core/sync/batch'
+import { deriveKeys, keyProof, sealBatch } from '@sagyou/core/sync/crypto'
 import { compareConflict, currentHlcOf } from '@sagyou/core/sync/conflict-view'
 import {
   buildRebasedRow,
   buildSyncRows,
   captureBaseHlc,
   planSyncChanges
-} from '../modules/sync/sync-plan'
-import { latestVersions, replaceSyncableState } from '../modules/sync/sync-replace'
+} from '@sagyou/core/sync/plan'
+import { latestVersions, replaceSyncableState } from '@sagyou/core/sync/replace'
 import {
   DATA_KINDS,
   extractDataRecords,
   hashPayload,
   type SyncRecord
-} from '../modules/sync/sync-records'
+} from '@sagyou/core/sync/records'
 
 type Row = Record<string, unknown>
 

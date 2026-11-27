@@ -7,7 +7,7 @@ import type {
 } from '../../../../main/modules/sync/sync-engine'
 import { CONFLICT_TEXTS, conflictNames } from '@sagyou/core/sync/conflict-view'
 import { useKanbanStore } from '../../store/kanban'
-import { hasLocalData, pendingText, syncedAgoText } from '../../utils/sync-view'
+import { hasLocalData, pendingText, syncedAgoText } from '@sagyou/core/sync/view'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { SyncConflictCard } from './SyncConflictCard'
 

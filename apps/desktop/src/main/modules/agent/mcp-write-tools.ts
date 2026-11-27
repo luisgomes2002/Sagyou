@@ -4,7 +4,7 @@ import {
   replaceMemorySection,
   type AiMemory,
   type MemoryType
-} from '../ai/memory'
+} from '@sagyou/core/memory'
 import type { McpWriteOutcome } from './mcp-write-queue'
 import {
   MCP_MEMORY_WRITE_TOOLS,

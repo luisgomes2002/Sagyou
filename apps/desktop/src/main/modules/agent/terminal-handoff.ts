@@ -1,4 +1,4 @@
-import { buildMemory, handoffId, HANDOFF_RUNNING_TAG, type AiMemory } from '../ai/memory'
+import { buildMemory, handoffId, HANDOFF_RUNNING_TAG, type AiMemory } from '@sagyou/core/memory'
 import { RUNNING_RESULT_LINE, RUNNING_STATUS_LINE, RUNNING_TITLE_PREFIX } from '../ai/handoff-state'
 
 export interface TerminalHandoffInput {
@@ -8,9 +8,9 @@ export interface TerminalHandoffInput {
   status: 'running' | 'completed' | 'cancelled' | 'failed' | 'not_applied'
   result: string
   changedFiles: string[]
-  /** What the session was about: its request, or the first MCP write it applied. */
+  /** What the session was about: the first MCP write it applied. */
   subject?: string
-  /** Decisions the chat passed at launch and `decisao` memories the run saved. */
+  /** The `decisao` memories the run saved. */
   decisions?: string[]
   /** Card summaries of the MCP writes the run applied. */
   actions?: string[]
@@ -36,8 +36,8 @@ const items = (values: string[] | undefined): string[] =>
 
 /**
  * A small, deterministic breadcrumb; full terminal output remains in its run
- * archive. Every line comes from a recorded source (the request, the chat's
- * decisions, applied MCP writes), never from the PTY log or an unapplied diff.
+ * archive. Every line comes from a recorded source (applied MCP writes and
+ * the `decisao` memories the run saved), never from the PTY log or an unapplied diff.
  */
 export function buildTerminalHandoff(
   input: TerminalHandoffInput,

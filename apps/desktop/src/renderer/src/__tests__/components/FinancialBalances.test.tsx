@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react'
 import { render, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { FinancialTable, FinancialTransaction } from '../../types'
+import type { FinancialTable, FinancialTransaction } from '@sagyou/core/types'
 import { FinanceTab } from '../../components/financial/FinanceTab'
 import { ConsolidatedTab } from '../../components/financial/ConsolidatedTab'
 

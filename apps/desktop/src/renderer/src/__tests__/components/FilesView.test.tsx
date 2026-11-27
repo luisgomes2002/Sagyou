@@ -2,7 +2,7 @@ import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@t
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { FilesView } from '../../components/views/FilesView'
 import { useKanbanStore } from '../../store/kanban'
-import type { StoredFile } from '../../types'
+import type { StoredFile } from '@sagyou/core/types'
 
 // addFiles schedules a debounced store save; keep it off window.electronAPI.store.
 vi.mock('../../services/ElectronStorage', () => ({

@@ -1,5 +1,5 @@
-import type { TimeBlock } from '../types'
-import { todayLocalISO } from './dates'
+import type { TimeBlock } from '@sagyou/core/types'
+import { todayLocalISO } from '@sagyou/core/dates'
 
 export type PlannerViewMode = 'day' | 'week' | 'month'
 

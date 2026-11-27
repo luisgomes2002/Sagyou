@@ -1,4 +1,4 @@
-import type { Goal } from '../types'
+import type { Goal } from '@sagyou/core/types'
 
 export type GoalKind = NonNullable<Goal['kind']>
 

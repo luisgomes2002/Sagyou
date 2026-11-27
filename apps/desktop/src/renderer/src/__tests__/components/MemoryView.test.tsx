@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryView } from '../../components/ai/MemoryView'
-import type { AiMemory } from '../../types'
+import type { AiMemory } from '@sagyou/core/types'
 
 vi.mock('../../services/ElectronStorage', () => ({
   ElectronStorage: vi.fn(function ElectronStorage(this: Record<string, unknown>) {
@@ -19,7 +19,6 @@ const memory = (i: number, archived = false): AiMemory => ({
   tags: [],
   pinned: false,
   source: 'modelo',
-  sourceConversationId: null,
   createdAt: '2026-10-01T00:00:00.000Z',
   updatedAt: '2026-10-01T00:00:00.000Z',
   lastAccessedAt: '2026-10-01T00:00:00.000Z',

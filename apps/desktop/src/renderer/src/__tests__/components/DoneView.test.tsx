@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import type { Project, Task, Sprint } from '../../types'
+import type { Project, Task, Sprint } from '@sagyou/core/types'
 import { DoneView } from '../../components/views/DoneView'
 
 const now = '2026-10-08T10:00:00.000Z'

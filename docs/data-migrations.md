@@ -12,6 +12,8 @@ de importação/exportação.
 
 ## Remoção do chat genérico e do histórico de conversas
 
+> **Histórico.** O código desta migração foi **removido na 1.15.0**, porque todos os aparelhos já a tinham rodado. Quem ainda estiver numa versão que tem o chat por API deve abrir antes a **1.14.x**: a 1.15.0 não apaga as conversas nem as chaves de API que encontrar. Continuam no código a trava do `ai-config.json` (nunca grava as chaves de API) e a tolerância a backups antigos com `conversations`/`chatImages`. O que a migração deixou em `userData` (`legacy-chat-state.json` e as pastas `backups/pre-remocao-chat-*`) o Sagyou não lê mais: você pode apagá-los à mão se não quiser guardar as conversas antigas.
+
 ⚠️ Esta migração **apaga dados do usuário de propósito**. Ela roda sozinha, uma única vez, na
 primeira abertura da versão que removeu o chat por API (spec
 `docs/specs/2026-10-24-remover-historico-chat.md`). O app não pergunta antes: tira o snapshot e
@@ -57,8 +59,7 @@ agentes (`codeHarness`, `userName`, `reasoningEffort`) e **qualquer chave descon
 
 ### Como achar o snapshot
 
-Pelo aviso único do painel **Sessões de código**, que mostra o caminho completo e some quando
-dispensado, ou abrindo a pasta de backups pelo menu **Backup**. O Sagyou guarda o caminho em
+Abrindo a pasta de backups pelo menu **Backup** (o aviso único do painel **Sessões de código** saiu na 1.15.0). O Sagyou guarda o caminho em
 `legacy-chat-state.json` (`legacyChatSnapshotDir`, sempre o do **primeiro** snapshot) e a dispensa do aviso em
 `legacyChatNoticeDismissedAt`. Esse arquivo é separado do banco de propósito: o SQLite esvazia a tabela
 `settings` na primeira gravação de cada sessão, e a marca se perderia.
@@ -92,3 +93,17 @@ vez de falhar: o resto é restaurado normalmente e o chat não volta.
 Não edite o SQLite, o `ai-config.json` nem os backups à mão para "desfazer" esta migração: o
 formato novo não lê conversas, e um arquivo antigo colocado de volta no diretório de dados será
 ignorado. Qualquer volta do chat exige uma spec nova.
+
+## Diário de alterações (`entity_events`), removido na 1.15.0
+
+⚠️ Esta mudança **apaga dados**: na primeira abertura da 1.15.0 a tabela `entity_events` do `kanban.db` é descartada (`DROP TABLE IF EXISTS`). Era um diário de cada gravação (o que foi criado, atualizado ou removido, com data), que nenhuma tela nem ferramenta lia desde que o canal `ai:lineage:list` saiu, e que o Sagyou deixou de gravar. Ele não entrava em backup nem em sincronização, então a perda é só dele. Nenhuma tarefa, nota, finança ou memória é tocada. **Faça uma cópia do `kanban.db` antes de abrir a versão nova pela primeira vez** se quiser guardar esse diário.
+
+## O que o Sagyou não lê mais e você pode apagar à mão
+
+O Sagyou **nunca apaga** estes itens sozinho (são seus). Depois das limpezas da 1.15.0 ele também não os lê:
+
+- `skills/` em `userData`: as Skills do Sagyou foram removidas; se você tinha arquivos `.md` ali, eles ficam no disco.
+- `ai-templates.json`: o arquivo antigo de modelos, que virava Skills.
+- `legacy-chat-state.json`: o estado da migração do chat, que já rodou.
+- `backups/pre-remocao-chat-*`: as cópias cruas das conversas do chat antigo, das imagens e do `kanban.db` de antes da remoção. **Guarde se quiser reler as conversas**: nada no app as traz de volta.
+- `kanban-data.json.migrated` (se existir): o arquivo da época em que o app não usava SQLite.

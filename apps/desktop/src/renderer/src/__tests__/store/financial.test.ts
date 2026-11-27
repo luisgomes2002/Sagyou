@@ -24,11 +24,10 @@ vi.mock('../../services/ElectronStorage', () => {
 })
 
 import { useKanbanStore } from '../../store/kanban'
-import { DEFAULT_FINANCIAL_PROFILE_ID } from '../../types'
-import { preserveLegacyFinancialMetadata } from '../../utils/financialLegacy'
-import { financialCategories } from '../../components/financial/shared'
+import { DEFAULT_FINANCIAL_PROFILE_ID } from '@sagyou/core/types'
+import { financialCategories } from '@sagyou/core/finance'
 
-function resetStore() {
+function resetStore(): void {
   useKanbanStore.setState({
     projects: [],
     tasks: [],
@@ -147,32 +146,6 @@ describe('financial table creation', () => {
     const id = useKanbanStore.getState().createList('Empresa 1')
     useKanbanStore.getState().deleteList(id)
     expect(useKanbanStore.getState().lists).toHaveLength(0)
-  })
-})
-
-describe('legacy financial metadata', () => {
-  it('retains unsupported old settings without exposing them as active table fields', () => {
-    const old = {
-      id: 'old',
-      name: 'Old',
-      currency: 'BRL',
-      items: [],
-      transactions: [],
-      goals: [],
-      budgets: [{ category: 'Casa', limit: 100 }],
-      recurringTransactions: [{ id: 'monthly', amount: 50 }],
-      createdAt: '2026-01-01',
-      updatedAt: '2026-01-01'
-    }
-    const normalized = preserveLegacyFinancialMetadata(
-      old as unknown as import('../../types').FinancialTable
-    )
-    expect('budgets' in normalized).toBe(false)
-    expect('recurringTransactions' in normalized).toBe(false)
-    expect(normalized.legacyFinancialMetadata).toEqual({
-      budgets: old.budgets,
-      recurringTransactions: old.recurringTransactions
-    })
   })
 })
 

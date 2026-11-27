@@ -44,11 +44,6 @@ export interface RemoteConfig {
   pcKeys: { publicKey: string; privateCipher: string } | null
   controllers: RemoteController[]
   servers: RcServerEntry[]
-  /**
-   * Server names from a file written before the Sagyou managed the servers;
-   * read only, turned into entries by `migrateServerNames` and never written.
-   */
-  legacyServerNames: string[]
   /** base64 of safeStorage.encryptString(base64 ESP32 key). */
   esp32KeyCipher: string | null
   failures: number
@@ -69,7 +64,6 @@ export function defaultRemoteConfig(): RemoteConfig {
     pcKeys: null,
     controllers: [],
     servers: [],
-    legacyServerNames: [],
     esp32KeyCipher: null,
     failures: 0,
     suspendedUntil: null,
@@ -122,9 +116,6 @@ function parse(raw: unknown): RemoteConfig {
           .filter((s, i, all) => all.findIndex((x) => x.projectId === s.projectId) === i)
           .slice(0, MAX_RC_SERVERS)
       : [],
-    legacyServerNames: Array.isArray(r.servers)
-      ? (r.servers as unknown[]).filter(isString).slice(0, MAX_RC_SERVERS)
-      : [],
     esp32KeyCipher: isString(r.esp32KeyCipher) ? r.esp32KeyCipher : null,
     failures:
       Number.isSafeInteger(r.failures) && (r.failures as number) >= 0 ? (r.failures as number) : 0,
@@ -159,11 +150,8 @@ export function saveRemoteConfig(
   config: RemoteConfig,
   now = Date.now()
 ): void {
-  // The legacy names are never written back: migrateServerNames already used them.
-  const { legacyServerNames: _legacy, ...rest } = config
-  void _legacy
   const pruned = {
-    ...rest,
+    ...config,
     seenNonces: config.seenNonces.filter((n) => n.until > now)
   }
   const path = join(dir, file)
@@ -171,42 +159,6 @@ export function saveRemoteConfig(
   writeFileSync(tmp, JSON.stringify(pruned, null, 2), { encoding: 'utf-8', mode: 0o600 })
   chmodSync(tmp, 0o600)
   renameSync(tmp, path)
-}
-
-/**
- * Turns the names of a file from before the Sagyou managed the servers into
- * entries: the project with that name (case-insensitive, exactly one), started
- * with the Sagyou as the logon task did, not confirmed yet. A name with no such
- * project, or with two, is dropped (counted).
- */
-export function migrateServerNames(
-  config: RemoteConfig,
-  projects: { id: string; name: string }[]
-): { config: RemoteConfig; dropped: number } {
-  if (config.legacyServerNames.length === 0) return { config, dropped: 0 }
-  const servers = [...config.servers]
-  let dropped = 0
-  for (const name of config.legacyServerNames) {
-    const key = name.trim().toLowerCase()
-    const matches = projects.filter((p) => p.name.trim().toLowerCase() === key)
-    if (matches.length !== 1) {
-      dropped++
-      continue
-    }
-    if (servers.some((s) => s.projectId === matches[0].id)) continue
-    if (servers.length >= MAX_RC_SERVERS) {
-      dropped++
-      continue
-    }
-    servers.push({
-      projectId: matches[0].id,
-      enabled: true,
-      autostart: true,
-      confirmedAt: null,
-      path: null
-    })
-  }
-  return { config: { ...config, servers, legacyServerNames: [] }, dropped }
 }
 
 export function sealSecret(safe: SafeStorageLike, bytes: Uint8Array): string {

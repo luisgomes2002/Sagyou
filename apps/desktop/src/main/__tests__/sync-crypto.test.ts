@@ -15,7 +15,7 @@ import {
   sealBatch,
   SyncDecryptError,
   toRecoveryCode
-} from '../modules/sync/sync-crypto'
+} from '@sagyou/core/sync/crypto'
 
 const plain = new TextEncoder().encode('{"v":1,"records":[]}')
 

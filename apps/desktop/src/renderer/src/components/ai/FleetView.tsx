@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect, useMemo } from 'react'
 import { v4 as uuidv4 } from 'uuid'
-import type { Project } from '../../types'
+import type { Project } from '@sagyou/core/types'
 import { SessionTabs, type SessionItem } from './fleet/SessionTabs'
 import { NewSessionPanel, type Harness, type SessionRequest } from './fleet/NewSessionPanel'
 import { LiveRunWorkspace } from './fleet/Workspaces'
@@ -38,7 +38,6 @@ export function FleetView({
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState('')
   const [harnesses, setHarnesses] = useState<Harness[]>([])
-  const [removalNotice, setRemovalNotice] = useState<string | null>(null)
   const [stoppingServer, setStoppingServer] = useState<string | null>(null)
   const [serverError, setServerError] = useState<{ projectId: string; message: string } | null>(
     null
@@ -61,20 +60,6 @@ export function FleetView({
       .then(setHarnesses)
       .catch(() => {})
   }, [])
-
-  // One-time notice that the retired chat history was removed (main hands it
-  // out until the user dismisses it).
-  useEffect(() => {
-    void window.electronAPI.legacyChat
-      ?.notice()
-      .then((notice) => setRemovalNotice(notice?.snapshotDir ?? null))
-      .catch(() => {})
-  }, [])
-
-  const dismissNotice = (): void => {
-    setRemovalNotice(null)
-    void window.electronAPI.legacyChat?.dismiss().catch(() => {})
-  }
 
   // ── Derived helpers ────────────────────────────────────────────────────────
   const projectNameOf = (dir: string, projectId?: string | null): string => {
@@ -166,8 +151,6 @@ export function FleetView({
       }
       const result = await window.electronAPI.ai.codeAgent.run({
         path: root?.path ?? '',
-        task: '',
-        blank: true,
         projectId: request.projectId,
         sessionId: uuidv4()
       })
@@ -239,21 +222,6 @@ export function FleetView({
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      {removalNotice && (
-        <div
-          role="status"
-          className="flex items-center justify-between gap-3 border-b border-[#2b2b31] bg-[#1b1b20] px-4 py-2 text-xs text-[#d4d4d4]"
-        >
-          <p>{`O histórico de conversas foi removido. Um backup foi salvo em ${removalNotice}.`}</p>
-          <button
-            type="button"
-            onClick={dismissNotice}
-            className="shrink-0 rounded border border-[#2b2b31] px-2 py-1 text-[#d4d4d4] hover:bg-[#2a2a30]"
-          >
-            Fechar aviso
-          </button>
-        </div>
-      )}
       <SessionTabs
         items={items}
         selectedKey={effective === NEW ? null : effective}

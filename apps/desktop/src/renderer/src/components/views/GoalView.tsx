@@ -1,5 +1,5 @@
 ﻿import { useState } from 'react'
-import type { Goal, Project } from '../../types'
+import type { Goal, Project } from '@sagyou/core/types'
 import { useKanbanStore } from '../../store/kanban'
 import { GoalModal } from '../modals/GoalModal'
 import { GoalCard } from '../GoalCard'

@@ -20,7 +20,6 @@ const handoff = (over: Partial<AiMemory> & { id: string }): AiMemory => ({
   tags: ['handoff', 'terminal'],
   pinned: false,
   source: 'modelo',
-  sourceConversationId: null,
   createdAt: NOW,
   updatedAt: NOW,
   lastAccessedAt: NOW,

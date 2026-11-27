@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Project } from '../../../types'
+import type { Project } from '@sagyou/core/types'
 
 export type Harness = Awaited<ReturnType<typeof window.electronAPI.ai.harnesses.status>>[number]
 

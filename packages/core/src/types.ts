@@ -33,11 +33,9 @@ export interface Project {
    */
   activeCodePathIds?: string[]
   /**
-   * @deprecated Legacy single-selection field. Superseded by
-   * `activeCodePathIds`, but kept written and in sync with its first entry so
-   * older app versions (and old backups) keep working. Read
-   * `activeCodePathIds`; never write this directly — the store keeps both in
-   * step.
+   * @deprecated Retired single-selection field. Never written: only an old backup can carry
+   * it, and `upgradeLegacyBackup` (backup-compat.ts) turns it into `activeCodePathIds` and
+   * drops it on import.
    */
   activeCodePathId?: string
   order?: number
@@ -315,8 +313,6 @@ export interface FinancialTable {
   /** Manually reconciled balance, kept separate from the calculated balance. */
   actualBalance?: string
   actualBalanceUpdatedAt?: string
-  /** Preserves unsupported keys from older databases and backups without exposing them as app features. */
-  legacyFinancialMetadata?: Record<string, unknown>
   createdAt: string
   updatedAt: string
 }
@@ -410,8 +406,6 @@ export interface AiMemory {
   tags: string[]
   pinned: boolean
   source: 'modelo' | 'usuario'
-  /** Conversation that supplied this memory's evidence, when it came from a chat. */
-  sourceConversationId: string | null
   createdAt: string
   updatedAt: string
   lastAccessedAt: string
@@ -479,7 +473,7 @@ export interface StickyNote {
   y: number
   width: number
   height: number
-  /** @deprecated Use taskIds. Kept for backward compatibility with old data. */
+  /** The first linked task; `taskIds` lists all of them. Both are live (canvas links, sync payload). */
   taskId?: string
   taskIds?: string[]
   connections?: string[]

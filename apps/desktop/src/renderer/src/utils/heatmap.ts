@@ -1,5 +1,5 @@
 ﻿import { startOfWeek, subWeeks, addDays, format } from 'date-fns'
-import type { Task } from '../types'
+import type { Task } from '@sagyou/core/types'
 
 export const HEATMAP_COLORS = ['#161b2c', '#312e81', '#4338ca', '#7c3aed', '#a080f0'] as const
 

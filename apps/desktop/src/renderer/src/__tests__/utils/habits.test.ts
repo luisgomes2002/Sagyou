@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { computeHabitSummary } from '../../utils/habits'
-import type { Habit } from '../../types'
+import { computeHabitSummary } from '@sagyou/core/habits'
+import type { Habit } from '@sagyou/core/types'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

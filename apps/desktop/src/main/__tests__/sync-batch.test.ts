@@ -14,8 +14,8 @@ import {
   recordKey,
   type OutgoingRow,
   type WireRecord
-} from '../modules/sync/sync-batch'
-import type { SyncRecord } from '../modules/sync/sync-records'
+} from '@sagyou/core/sync/batch'
+import type { SyncRecord } from '@sagyou/core/sync/records'
 
 function wire(i: number, payload: Record<string, unknown> = { title: `t${i}` }): WireRecord {
   return { kind: 'task', id: `t${i}`, hlc: `h${i}`, baseHlc: null, deleted: false, payload }

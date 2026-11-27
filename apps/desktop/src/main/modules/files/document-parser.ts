@@ -103,10 +103,6 @@ export function isDocumentExt(ext: string): boolean {
   return ext.toLowerCase() in EXT_MIME
 }
 
-export function mimeForDocumentExt(ext: string): string {
-  return EXT_MIME[ext.toLowerCase()] ?? 'application/octet-stream'
-}
-
 export function prefersMarkItDown(ext: string): boolean {
   return MARKITDOWN_PREFERRED_EXT.has(ext.toLowerCase())
 }

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { GuideView } from '../../components/views/GuideView'
-import { ALL_FEATURE_IDS } from '../../types'
+import { ALL_FEATURE_IDS } from '@sagyou/core/types'
 
 const writeText = vi.fn<(text: string) => Promise<void>>()
 

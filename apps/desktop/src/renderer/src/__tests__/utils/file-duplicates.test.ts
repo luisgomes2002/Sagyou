@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { uniqueCopyName, planImport, repeatedFileIds } from '../../utils/file-duplicates'
-import type { StoredFile } from '../../types'
+import type { StoredFile } from '@sagyou/core/types'
 
 const file = (id: string, name: string, size = 10): StoredFile => ({
   id,

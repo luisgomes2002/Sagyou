@@ -1,6 +1,6 @@
 ﻿import { useState } from 'react'
-import type { FinancialTable, FinancialProfile, Currency } from '../../types'
-import { CURRENCY_CONFIG } from '../../types'
+import type { FinancialTable, FinancialProfile, Currency } from '@sagyou/core/types'
+import { CURRENCY_CONFIG } from '@sagyou/core/types'
 
 interface SidebarProps {
   lists: FinancialTable[]

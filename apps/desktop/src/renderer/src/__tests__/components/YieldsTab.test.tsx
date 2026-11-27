@@ -1,8 +1,8 @@
 import { render } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { FinancialTable, FinancialTransaction } from '../../types'
+import type { FinancialTable, FinancialTransaction } from '@sagyou/core/types'
 import { YieldsTab } from '../../components/financial/YieldsTab'
-import { YIELD_SUMMARY_CATEGORY } from '../../utils/yieldSummary'
+import { YIELD_SUMMARY_CATEGORY } from '@sagyou/core/yieldSummary'
 
 const list: FinancialTable = {
   id: 'account',

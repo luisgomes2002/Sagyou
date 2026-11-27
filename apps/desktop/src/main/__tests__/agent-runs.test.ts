@@ -17,7 +17,6 @@ const NOW = Date.now()
 
 const run = (over: Partial<AgentRunMeta> = {}): AgentRunMeta => ({
   id: '00000000-0000-4000-8000-000000000000',
-  convId: null,
   sessionId: 's1',
   projectId: 'p1',
   agent: 'codex',
@@ -99,7 +98,7 @@ describe('normalizeRuns', () => {
     expect(r.agent).toBe('wat')
     expect(r.startedAt).toBe(0)
     expect(r.fileCount).toBe(0)
-    expect(r.convId).toBeNull()
+    expect(r).not.toHaveProperty('convId')
   })
 
   it('keeps a recognized worktree delivery state', () => {
@@ -149,16 +148,16 @@ describe('runsForSession', () => {
     expect(runsForSession([run({ sessionId: null })], null)).toEqual([])
   })
 
-  it('still finds an old run through its legacy convId', () => {
-    const old = run({ id: uuid(1), sessionId: null, convId: 'legacy' })
-    expect(runsForSession([old], 'legacy').map((r) => r.id)).toEqual([uuid(1)])
+  it('does not list an old row that only has the retired convId', () => {
+    // Such rows were archived before the chat was removed and expire in 24 h anyway.
+    const [old] = normalizeRuns([{ id: uuid(1), convId: 'legacy', task: 'x' }])
+    expect(runsForSession([old], 'legacy')).toEqual([])
   })
 })
 
 describe('runOwnership', () => {
-  it('records the session and project; convId is never set for a new run', () => {
+  it('records the session and project of a new run', () => {
     expect(runOwnership({ sessionId: 's1', projectId: 'p1' })).toEqual({
-      convId: null,
       sessionId: 's1',
       projectId: 'p1'
     })
@@ -166,7 +165,6 @@ describe('runOwnership', () => {
 
   it('stores a null project for a general session', () => {
     expect(runOwnership({ sessionId: 's1', projectId: null })).toEqual({
-      convId: null,
       sessionId: 's1',
       projectId: null
     })
@@ -175,21 +173,40 @@ describe('runOwnership', () => {
 })
 
 describe('legacy index rows', () => {
-  it('keeps an old convId-only row listable and preserves its convId', () => {
+  it('reads an old convId-only row without the retired field', () => {
     const [r] = normalizeRuns([{ id: uuid(1), convId: 'old-chat', task: 'x' }])
-    expect(r.convId).toBe('old-chat')
+    expect(r).not.toHaveProperty('convId')
     expect(r.sessionId).toBeNull()
     expect(r.projectId).toBeNull()
-    // Survives a write/read round trip of index.json.
+    // A write/read round trip of index.json keeps it readable.
     const [again] = normalizeRuns(JSON.parse(JSON.stringify([r])))
-    expect(again.convId).toBe('old-chat')
+    expect(again.id).toBe(uuid(1))
+    expect(again).not.toHaveProperty('convId')
+  })
+
+  it('reads an old row that stored the retired write allowlist, read-only roots and decisions', () => {
+    const [r] = normalizeRuns([
+      {
+        id: uuid(1),
+        sessionId: 's1',
+        task: 'x',
+        allowedWritePaths: ['src/'],
+        readOnlyRoots: [{ id: 'r', nome: 'Ref', path: '/ref' }],
+        decisions: ['usar X']
+      }
+    ])
+    expect(r.id).toBe(uuid(1))
+    expect(r.sessionId).toBe('s1')
+    for (const key of ['allowedWritePaths', 'readOnlyRoots', 'decisions']) {
+      expect(r).not.toHaveProperty(key)
+    }
   })
 
   it('reads sessionId and projectId from a new row', () => {
     const [r] = normalizeRuns([{ id: uuid(1), sessionId: 's9', projectId: 'p9' }])
     expect(r.sessionId).toBe('s9')
     expect(r.projectId).toBe('p9')
-    expect(r.convId).toBeNull()
+    expect(r).not.toHaveProperty('convId')
   })
 })
 
@@ -236,16 +253,16 @@ describe('pruneRuns', () => {
     expect([...keep, ...drop].map((r) => r.id).sort()).toEqual(runs.map((r) => r.id).sort())
   })
 
-  it('groups by sessionId, then legacy convId, then a shared bucket', () => {
+  it('groups by sessionId, then a shared bucket for rows without one', () => {
     const runs = [
-      run({ id: uuid(1), sessionId: 's', convId: 'x', startedAt: 1 }),
-      run({ id: uuid(2), sessionId: null, convId: 'x', startedAt: 2 }),
-      run({ id: uuid(3), sessionId: null, convId: null, startedAt: 3 }),
-      run({ id: uuid(4), sessionId: null, convId: null, startedAt: 4 })
+      run({ id: uuid(1), sessionId: 's', startedAt: 1 }),
+      run({ id: uuid(2), sessionId: null, startedAt: 2 }),
+      run({ id: uuid(3), sessionId: null, startedAt: 3 }),
+      run({ id: uuid(4), sessionId: null, startedAt: 4 })
     ]
     const { keep, drop } = pruneRuns(runs, 1, 100)
-    expect(keep.map((r) => r.id).sort()).toEqual([uuid(1), uuid(2), uuid(4)].sort())
-    expect(drop.map((r) => r.id)).toEqual([uuid(3)])
+    expect(keep.map((r) => r.id).sort()).toEqual([uuid(1), uuid(4)].sort())
+    expect(drop.map((r) => r.id).sort()).toEqual([uuid(2), uuid(3)].sort())
   })
 })
 

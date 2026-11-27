@@ -16,13 +16,13 @@ import type {
   StoredFile,
   TimeBlock,
   Routine
-} from '../types'
+} from '@sagyou/core/types'
 import {
   DEFAULT_FINANCIAL_PROFILE_ID,
   normalizeFeaturePreferences,
   normalizeUiPreferences,
   DEFAULT_UI_PREFERENCES
-} from '../types'
+} from '@sagyou/core/types'
 import { ElectronStorage } from '../services/ElectronStorage'
 import {
   normalizeFinancialProfiles,
@@ -30,7 +30,7 @@ import {
   normalizeNotes,
   normalizeProject,
   normalizeTimers
-} from './normalization'
+} from '@sagyou/core/normalization'
 
 import type { HabitsSlice } from './slices/habits'
 import { createHabitsSlice } from './slices/habits'
@@ -191,7 +191,6 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
         files,
         timeBlocks,
         routines,
-        activeTimer: activeTimers[0] ?? null,
         syncGeneration
       })
     } finally {

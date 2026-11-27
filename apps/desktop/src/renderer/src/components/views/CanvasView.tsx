@@ -1,6 +1,6 @@
 ﻿import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
-import type { Project, Task } from '../../types'
-import { NOTE_COLORS } from '../../types'
+import type { Project, Task } from '@sagyou/core/types'
+import { NOTE_COLORS } from '@sagyou/core/types'
 import { useKanbanStore } from '../../store/kanban'
 import { StickyNoteCard } from '../StickyNoteCard'
 import { ConfirmDialog } from '../ConfirmDialog'

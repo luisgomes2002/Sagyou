@@ -9,7 +9,6 @@ interface SessionProject {
   id: string
   codePaths?: CodeRoot[]
   activeCodePathIds?: string[]
-  activeCodePathId?: string
 }
 
 interface SessionRootInput {
@@ -44,8 +43,7 @@ export function resolveAgentSessionRoot(input: SessionRootInput): AgentSessionRo
   }
 
   const codeRoot = resolve(requestPath)
-  const activeIds = project?.activeCodePathIds ??
-    (project?.activeCodePathId ? [project.activeCodePathId] : [])
+  const activeIds = project?.activeCodePathIds ?? []
   const authorized = (project?.codePaths ?? []).some(
     (root) => activeIds.includes(root.id) && resolve(root.path) === codeRoot
   )

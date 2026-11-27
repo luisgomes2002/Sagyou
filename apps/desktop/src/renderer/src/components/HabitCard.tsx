@@ -1,5 +1,5 @@
 ﻿import { useState } from 'react'
-import type { Habit } from '../types'
+import type { Habit } from '@sagyou/core/types'
 
 const WEEK_DAYS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
 

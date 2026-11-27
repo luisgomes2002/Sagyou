@@ -8,20 +8,18 @@ import type {
   StickyNote
 } from './types'
 import { DEFAULT_FINANCIAL_PROFILE_ID } from './types'
-import { preserveLegacyFinancialMetadata } from './financialLegacy'
 import { D, moneyStr } from './money'
-import { migrateYieldSummaryDates } from './yieldSummary'
 
-/** Keep the legacy singular selection in sync with the current array field. */
+/**
+ * The selected code paths: the list, or none. (The retired singular `activeCodePathId` of an
+ * old backup is turned into the list by `upgradeLegacyBackup` before an import gets here.)
+ */
 export function activeCodePathIds(project: Project): string[] {
-  if (Array.isArray(project.activeCodePathIds)) return project.activeCodePathIds
-  return project.activeCodePathId ? [project.activeCodePathId] : []
+  return Array.isArray(project.activeCodePathIds) ? project.activeCodePathIds : []
 }
 
-export function withActiveCodePaths(
-  ids: string[]
-): Pick<Project, 'activeCodePathIds' | 'activeCodePathId'> {
-  return { activeCodePathIds: ids, activeCodePathId: ids[0] }
+export function withActiveCodePaths(ids: string[]): Pick<Project, 'activeCodePathIds'> {
+  return { activeCodePathIds: ids }
 }
 
 export function normalizeProject(project: Project, index: number): Project {
@@ -39,19 +37,19 @@ export function normalizeNotes(notes: StickyNote[]): StickyNote[] {
   }))
 }
 
-// Load and backup import must apply the exact same money and detail migrations.
-// A display-only conversion here can otherwise overwrite historical amounts.
+// Load and backup import must apply the exact same money and detail rules (every amount a
+// canonical decimal string). A display-only conversion here can otherwise overwrite historical
+// amounts. What only an old backup can carry is in `upgradeLegacyBackup` (backup-compat.ts).
 export function normalizeFinancialTable(list: FinancialTable): FinancialTable {
-  const table = migrateYieldSummaryDates(preserveLegacyFinancialMetadata(list))
   return {
-    ...table,
+    ...list,
     profileId: list.profileId || DEFAULT_FINANCIAL_PROFILE_ID,
     currency: (list.currency || 'BRL') as Currency,
     items: (list.items ?? []).map((item) => ({
       ...item,
       price: item.price === null || item.price === undefined ? undefined : moneyStr(item.price)
     })),
-    transactions: (table.transactions ?? []).map((transaction) => {
+    transactions: (list.transactions ?? []).map((transaction) => {
       const amount = moneyStr(transaction.amount)
       return {
         ...transaction,
@@ -164,14 +162,10 @@ export function normalizeFinancialProfiles(value: unknown): FinancialProfile[] {
     : [{ ...DEFAULT_FINANCIAL_PROFILE }]
 }
 
-export function normalizeTimers(data: {
-  activeTimers?: unknown
-  activeTimer?: unknown
-}): ActiveTimer[] {
+export function normalizeTimers(data: { activeTimers?: unknown }): ActiveTimer[] {
   const valid = (timer: unknown): timer is ActiveTimer =>
     !!timer &&
     typeof (timer as ActiveTimer).taskId === 'string' &&
     typeof (timer as ActiveTimer).startedAt === 'number'
-  if (Array.isArray(data.activeTimers)) return data.activeTimers.filter(valid)
-  return valid(data.activeTimer) ? [data.activeTimer] : []
+  return Array.isArray(data.activeTimers) ? data.activeTimers.filter(valid) : []
 }

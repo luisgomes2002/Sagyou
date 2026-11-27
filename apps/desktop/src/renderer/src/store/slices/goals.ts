@@ -1,6 +1,6 @@
 import type { StateCreator } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import type { Goal, GoalEntry } from '../../types'
+import type { Goal, GoalEntry } from '@sagyou/core/types'
 
 export interface GoalsSlice {
   goals: Goal[]

@@ -1,6 +1,6 @@
 import { render } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { FinancialTable } from '../../types'
+import type { FinancialTable } from '@sagyou/core/types'
 import { AnalyticsTab } from '../../components/financial/AnalyticsTab'
 
 const list: FinancialTable = {

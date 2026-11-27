@@ -42,8 +42,6 @@ export interface AiMemory {
   tags: string[]
   pinned: boolean
   source: MemorySource
-  /** Always null: chat history is gone. Kept so older stored rows and backups still parse. */
-  sourceConversationId: string | null
   createdAt: string
   updatedAt: string
   lastAccessedAt: string // bumped on every read/injection → feeds decay
@@ -284,7 +282,6 @@ export function buildMemory(
     tags: has('tags') ? coerceTags(input.tags) : (existing?.tags ?? []),
     pinned: has('pinned') ? input.pinned === true : (existing?.pinned ?? false),
     source: existing?.source ?? coerceSource(input.source),
-    sourceConversationId: null,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
     lastAccessedAt: existing?.lastAccessedAt ?? now,
@@ -306,7 +303,6 @@ export function normalizeMemory(raw: Partial<AiMemory> & { id: string }, now: st
     tags: coerceTags(raw.tags),
     pinned: raw.pinned === true,
     source: coerceSource(raw.source),
-    sourceConversationId: null,
     createdAt: str(raw.createdAt) || now,
     updatedAt: str(raw.updatedAt) || now,
     lastAccessedAt: str(raw.lastAccessedAt) || str(raw.createdAt) || now,
@@ -553,10 +549,10 @@ export function findConflicts(memories: AiMemory[]): MemoryConflict[] {
 }
 
 /**
- * Chat history no longer exists, so a memory must not point into it. Drops the
- * `sourceConversationId` and the two textual traces of it: the pointer that a
- * truncated chat handoff carried, and the `conversa=` reference of a terminal
- * handoff. Everything else in the memory is left byte-for-byte as it was.
+ * Chat history no longer exists, so a handoff must not point into it: cuts the two textual
+ * traces of it, the pointer that a truncated chat handoff carried and the `conversa=`
+ * reference of a terminal handoff. Everything else in a memory is left byte-for-byte as it was.
+ * (Used by `upgradeLegacyBackup`, which also drops the retired `sourceConversationId` key.)
  */
 export function scrubConversationLinks(memories: AiMemory[]): {
   memories: AiMemory[]
@@ -566,15 +562,13 @@ export function scrubConversationLinks(memories: AiMemory[]): {
   const scrubbed = memories.map((memory) => {
     // Only generated handoffs carry these traces; a memory the user or the model
     // wrote may legitimately contain the same words.
-    const body =
-      memory.type === 'handoff'
-        ? memory.body
-            .replace(/\s*\(conversa completa: id=[^)]*\)/g, '')
-            .replace(/conversa=[^;\n]*;\s*/g, '')
-        : memory.body
-    if (body === memory.body && memory.sourceConversationId == null) return memory
+    if (memory.type !== 'handoff') return memory
+    const body = memory.body
+      .replace(/\s*\(conversa completa: id=[^)]*\)/g, '')
+      .replace(/conversa=[^;\n]*;\s*/g, '')
+    if (body === memory.body) return memory
     changed += 1
-    return { ...memory, body, sourceConversationId: null }
+    return { ...memory, body }
   })
   return { memories: scrubbed, changed }
 }

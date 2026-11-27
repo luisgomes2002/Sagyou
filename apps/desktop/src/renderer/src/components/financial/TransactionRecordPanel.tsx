@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import type { Currency, FinancialTable, FinancialTransaction } from '../../types'
+import type { Currency, FinancialTable, FinancialTransaction } from '@sagyou/core/types'
 import { useKanbanStore } from '../../store/kanban'
-import { D, formatCurrency, formatDateBR, parseDecimalInput } from './shared'
+import { D, formatCurrency, formatDateBR, parseDecimalInput } from '@sagyou/core/finance'
 import { useFileImport } from '../useFileImport'
 
 interface Props {

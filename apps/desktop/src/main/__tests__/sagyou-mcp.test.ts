@@ -13,7 +13,7 @@ import {
   type McpSession
 } from '../modules/agent/sagyou-mcp'
 import { McpWriteQueue, RendererMcpActionBridge } from '../modules/agent/mcp-write-queue'
-import type { AiMemory } from '../modules/ai/memory'
+import type { AiMemory } from '@sagyou/core/memory'
 import type { McpActionResult } from '../modules/agent/mcp-write-types'
 import type { MemorySearchHit } from '../store'
 import type { ActiveSessionView } from '../modules/agent/sagyou-mcp'
@@ -1647,7 +1647,6 @@ describe('list_recent_memories', () => {
     tags: [],
     pinned: false,
     source: 'modelo',
-    sourceConversationId: null,
     createdAt: '2026-10-01T12:00:00.000Z',
     updatedAt: '2026-10-01T12:00:00.000Z',
     lastAccessedAt: '2026-10-01T12:00:00.000Z',
@@ -2018,7 +2017,6 @@ describe('updatedAt in memory reads', () => {
       tags: [],
       pinned: false,
       source: 'modelo',
-      sourceConversationId: null,
       createdAt: '2026-11-01T00:00:00.000Z',
       updatedAt: UPDATED,
       lastAccessedAt: UPDATED,
@@ -2139,7 +2137,6 @@ describe('reading another project needs an approval', () => {
     tags: [],
     pinned: false,
     source: 'modelo',
-    sourceConversationId: null,
     createdAt: '2026-10-01T12:00:00.000Z',
     updatedAt: '2026-10-01T12:00:00.000Z',
     lastAccessedAt: '2026-10-01T12:00:00.000Z',
@@ -2472,7 +2469,6 @@ describe('read_memory in pages and check_memories similar pairs', () => {
     tags: [],
     pinned: false,
     source: 'modelo',
-    sourceConversationId: null,
     createdAt: '2026-10-01T12:00:00.000Z',
     updatedAt: '2026-10-01T12:00:00.000Z',
     lastAccessedAt: '2026-10-01T12:00:00.000Z',

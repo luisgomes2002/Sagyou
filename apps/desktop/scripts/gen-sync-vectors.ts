@@ -8,22 +8,18 @@
 // Run once, from the repository root:  npx tsx apps/desktop/scripts/gen-sync-vectors.ts
 // Do not regenerate after the move: the point is that the file came from the old code.
 import { mkdirSync, writeFileSync } from 'fs'
-import { dirname, join } from 'path'
-import { encodeBatch, type WireRecord } from '../src/main/modules/sync/sync-batch'
+import { join } from 'path'
+import { encodeBatch, type WireRecord } from '@sagyou/core/sync/batch'
 import {
   deriveKeys,
   keyProof,
   opaqueDeviceId,
   sealBatch,
   toRecoveryCode
-} from '../src/main/modules/sync/sync-crypto'
+} from '@sagyou/core/sync/crypto'
 import { encodePairCode } from '../src/main/modules/sync/sync-engine'
-import {
-  extractDataRecords,
-  extractMemoryRecords,
-  hashPayload
-} from '../src/main/modules/sync/sync-records'
-import type { AiMemory } from '../src/main/modules/ai/memory'
+import { extractDataRecords, extractMemoryRecords, hashPayload } from '@sagyou/core/sync/records'
+import type { AiMemory } from '@sagyou/core/memory'
 
 const T = '2026-10-30T12:00:00.000Z'
 
@@ -154,7 +150,6 @@ const source = {
       profileId: 'personal',
       provider: 'Banco',
       actualBalance: '1000.10',
-      legacyFinancialMetadata: { budget: 500 },
       createdAt: T,
       updatedAt: T,
       items: [{ id: 'i1', name: 'Pão', qty: 1.5, price: '5.25', done: false }],

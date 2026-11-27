@@ -83,7 +83,6 @@ const memory = (m: SimilarCase['memories'][number]): AiMemory => ({
   tags: m.tags,
   pinned: false,
   source: 'modelo',
-  sourceConversationId: null,
   createdAt: '2026-11-01T00:00:00.000Z',
   updatedAt: '2026-11-01T00:00:00.000Z',
   lastAccessedAt: '2026-11-01T00:00:00.000Z',

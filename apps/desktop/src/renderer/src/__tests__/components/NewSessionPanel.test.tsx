@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { NewSessionPanel, type Harness } from '../../components/ai/fleet/NewSessionPanel'
-import type { Project } from '../../types'
+import type { Project } from '@sagyou/core/types'
 
 const projects = [
   { id: 'empty', name: 'Sem código', codePaths: [], activeCodePathIds: [] },

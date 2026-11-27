@@ -630,13 +630,6 @@ describe('projectServerPath', () => {
     )
   })
 
-  it('cai no activeCodePathId legado', () => {
-    expect(
-      projectServerPath({ codePaths, activeCodePathIds: [], activeCodePathId: 'b' }, () => true)
-    ).toBe('E:\\B')
-    expect(projectServerPath({ codePaths, activeCodePathId: 'a' }, () => true)).toBe('E:\\A')
-  })
-
   it('nenhum caminho ativo ou existente = null', () => {
     expect(projectServerPath({ codePaths }, () => true)).toBeNull()
     expect(projectServerPath({ codePaths, activeCodePathIds: ['a'] }, () => false)).toBeNull()

@@ -1,4 +1,4 @@
-import type { StoredFile } from '../types'
+import type { StoredFile } from '@sagyou/core/types'
 
 export interface StagedFile {
   token: string

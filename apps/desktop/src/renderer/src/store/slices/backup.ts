@@ -21,17 +21,18 @@ import type {
   ActiveTimer,
   FeatureId,
   UiPreferences
-} from '../../types'
+} from '@sagyou/core/types'
 import {
   DEFAULT_FINANCIAL_PROFILE_ID,
   normalizeFeaturePreferences,
   normalizeUiPreferences
-} from '../../types'
+} from '@sagyou/core/types'
 import {
   normalizeFinancialProfiles,
   normalizeFinancialTable,
   normalizeProject
-} from '../normalization'
+} from '@sagyou/core/normalization'
+import { upgradeLegacyBackup } from '@sagyou/core/backup-compat'
 
 interface StorageDep {
   exportBackup: (backup: Backup) => Promise<{ success: boolean }>
@@ -142,7 +143,9 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
       if (result.error) throw new Error(result.error)
       if (!result.success || result.cancelled || !result.data) return false
 
-      const backup = result.data as Backup
+      // Whatever an old backup carries that the current model no longer has is upgraded here,
+      // once, before anything below reads it.
+      const backup = upgradeLegacyBackup(result.data as Backup)
 
       // Save the current data and blobs before changing either side of the store.
       if (!(await get().exportBackup(true, true))) return false

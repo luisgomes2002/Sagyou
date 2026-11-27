@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect } from 'react'
-import type { Column } from '../../types'
-import { PROJECT_COLORS } from '../../types'
+import type { Column } from '@sagyou/core/types'
+import { PROJECT_COLORS } from '@sagyou/core/types'
 import { ModalBase } from '../ModalBase'
 import { CancelButton } from '../CancelButton'
 

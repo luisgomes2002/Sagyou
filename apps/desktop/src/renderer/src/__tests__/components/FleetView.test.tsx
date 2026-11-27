@@ -3,7 +3,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { FleetView } from '../../components/ai/FleetView'
-import type { Project } from '../../types'
+import type { Project } from '@sagyou/core/types'
 import { useKanbanStore } from '../../store/kanban'
 import { retainFleetSelection } from '../../components/ai/fleet/fleetSelection'
 import type { RcServerView } from '../../utils/rcServers'
@@ -78,10 +78,6 @@ beforeEach(() => {
     terminalInput: vi.fn().mockResolvedValue({ success: true }),
     terminalResize: vi.fn().mockResolvedValue({ success: true }),
     onChanged: vi.fn(() => vi.fn())
-  } as never
-  window.electronAPI.legacyChat = {
-    notice: vi.fn().mockResolvedValue(null),
-    dismiss: vi.fn().mockResolvedValue(undefined)
   } as never
   window.electronAPI.ai.harnesses = {
     status: vi.fn().mockResolvedValue([
@@ -190,13 +186,16 @@ describe('FleetView', () => {
     await user.click(screen.getByRole('button', { name: 'Abrir sessão' }))
 
     expect(window.electronAPI.ai.codeAgent.run).toHaveBeenCalledWith(
-      expect.objectContaining({ path: '', projectId: null, task: '', blank: true })
+      expect.objectContaining({ path: '', projectId: null })
     )
     const sent = (window.electronAPI.ai.codeAgent.run as ReturnType<typeof vi.fn>).mock
       .calls[0][0] as Record<string, unknown>
     expect(typeof sent.sessionId).toBe('string')
     expect((sent.sessionId as string).length).toBeGreaterThan(0)
     expect(sent).not.toHaveProperty('convId')
+    // A session always opens blank: no initial request or briefing parameters exist any more.
+    expect(sent).not.toHaveProperty('task')
+    expect(sent).not.toHaveProperty('blank')
   })
 
   it('starts a project terminal in the private workspace when no root is selected', async () => {
@@ -216,7 +215,7 @@ describe('FleetView', () => {
     await user.click(screen.getByRole('button', { name: 'Abrir sessão' }))
 
     expect(window.electronAPI.ai.codeAgent.run).toHaveBeenCalledWith(
-      expect.objectContaining({ path: '', projectId: 'p1', task: '', blank: true })
+      expect.objectContaining({ path: '', projectId: 'p1' })
     )
   })
 
@@ -386,30 +385,6 @@ describe('FleetView', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Aprovar' }))
 
     expect(window.electronAPI.ai.codeAgent.approve).toHaveBeenCalledWith('approval-1', true)
-  })
-
-  it('shows the one-time removal notice with the snapshot path and dismisses it', async () => {
-    ;(window.electronAPI.legacyChat.notice as ReturnType<typeof vi.fn>).mockResolvedValue({
-      snapshotDir: 'C:\\dados\\backups\\pre-remocao-chat-1'
-    })
-    render(<FleetView projects={projects} />)
-
-    expect(
-      await screen.findByText(
-        'O histórico de conversas foi removido. Um backup foi salvo em C:\\dados\\backups\\pre-remocao-chat-1.'
-      )
-    ).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Fechar aviso' }))
-
-    expect(window.electronAPI.legacyChat.dismiss).toHaveBeenCalledTimes(1)
-    expect(screen.queryByText(/O histórico de conversas foi removido/)).not.toBeInTheDocument()
-  })
-
-  it('shows no notice when the migration reports nothing', async () => {
-    render(<FleetView projects={projects} />)
-    await screen.findByText('Nenhum agente ativo')
-    expect(window.electronAPI.legacyChat.notice).toHaveBeenCalledTimes(1)
-    expect(screen.queryByText(/O histórico de conversas foi removido/)).not.toBeInTheDocument()
   })
 
   describe('servidores de Remote Control', () => {

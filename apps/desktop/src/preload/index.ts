@@ -7,7 +7,7 @@ import type {
   MemoryPage,
   MemorySummary,
   MemoryConflict
-} from '../main/modules/ai/memory'
+} from '@sagyou/core/memory'
 import type { McpActionRequest, McpActionResult } from '../main/modules/agent/mcp-write-types'
 import type { UpdateStatus } from '../main/modules/update/app-updater'
 import type { McpExternalStatus } from '../main/modules/agent/mcp-external'
@@ -32,18 +32,9 @@ import type { PendingAuthorization } from '../main/modules/remote/remote-service
 import type { RcServerList, RcServerResult } from '../main/handlers/rc-servers'
 import type { RcStartResult, RcStopResult } from '../main/modules/remote/rc-manager'
 
-/** A user-written Skill (.md file in userData/skills/). */
-interface Skill {
-  name: string
-  body: string
-  updatedAt: string
-}
-
 /** A finished code-agent run, as listed in the run picker. */
 interface AgentRunMeta {
   id: string
-  /** Legacy: only on runs archived before chats were removed. */
-  convId: string | null
   sessionId: string | null
   projectId: string | null
   /** codex is the only agent. Kept on the row so the picker can state it. */
@@ -74,7 +65,6 @@ interface CodeRunSummary {
   id: string
   dir: string
   task: string
-  convId: string | null
   sessionId?: string | null
   projectId?: string | null
   financialProfileId?: string
@@ -88,8 +78,6 @@ interface CodeRunSummary {
   interactive: boolean
   terminalCols?: number
   terminalRows?: number
-  allowedWritePaths?: string[]
-  readOnlyRoots?: { id: string; nome: string; path: string }[]
   startedAt: number
   log: string
   model?: string
@@ -310,11 +298,6 @@ export const api = {
     }): Promise<DesktopPrefsView> => ipcRenderer.invoke('desktop:prefs:set', patch),
     setOpenAtLogin: (on: boolean): Promise<DesktopPrefsView> =>
       ipcRenderer.invoke('desktop:open-at-login:set', on)
-  },
-  // One-time notice that the retired chat's data was removed (pulled when the Fleet opens).
-  legacyChat: {
-    notice: (): Promise<{ snapshotDir: string } | null> => ipcRenderer.invoke('legacy-chat:notice'),
-    dismiss: (): Promise<void> => ipcRenderer.invoke('legacy-chat:dismiss')
   },
   store: {
     load: (): Promise<{ projects: unknown[]; tasks: unknown[] }> =>
@@ -544,41 +527,14 @@ export const api = {
       }): Promise<{ ok: true } | { error: string }> =>
         ipcRenderer.invoke('ai:memory:handoff', input)
     },
-    // Entity lineage: the event log for one entity (audit trail).
-    lineage: {
-      list: (
-        entityType: string,
-        entityId: string
-      ): Promise<
-        {
-          id: string
-          entityType: string
-          entityId: string
-          action: string
-          summary: string
-          source: string
-          toolName?: string
-          convId?: string
-          timestamp: string
-        }[]
-      > => ipcRenderer.invoke('ai:lineage:list', entityType, entityId)
-    },
     // Native code agent (the loop in ./code-agent). N concurrent runs can be
     // active in different directories.
     codeAgent: {
       run: (request: {
         path: string
-        task: string
-        /** Open the CLI on its own screen, with no initial request or briefing. */
-        blank?: boolean
-        files?: string[]
-        allowedWritePaths?: string[]
-        readOnlyRoots?: { id: string; nome: string; path: string }[]
-        decisoes?: string[]
         sessionId?: string
         projectId?: string | null
         financialProfileId?: string
-        coordinated?: boolean
         autoApprove?: boolean
       }): Promise<{
         success: boolean
@@ -807,82 +763,7 @@ export const api = {
       > => ipcRenderer.invoke('ai:harnesses:status', refresh)
     },
     // Native folder picker for choosing a project's code directory.
-    pickDirectory: (): Promise<{ path: string | null }> => ipcRenderer.invoke('ai:pick-directory'),
-    // Read-only source access, confined to `root` (a project's code path).
-    code: {
-      list: (
-        root: string,
-        sub?: string,
-        offset?: number,
-        limit?: number
-      ): Promise<{
-        files?: string[]
-        truncated?: boolean
-        offset?: number
-        total?: number
-        nextOffset?: number
-        error?: string
-      }> => ipcRenderer.invoke('ai:code:list', root, sub, offset, limit),
-      read: (
-        root: string,
-        rel: string,
-        offset?: number,
-        maxChars?: number,
-        scope?: { symbol?: string; lineStart?: number; lineEnd?: number }
-      ): Promise<{
-        content?: string
-        truncated?: boolean
-        offset?: number
-        total?: number
-        nextOffset?: number
-        // Set in scoped reads (a symbol or a line range): the 1-based bounds of
-        // the returned slice, and the symbol name when one was requested.
-        simbolo?: string
-        linhaInicio?: number
-        linhaFim?: number
-        // A map of the file's declarations — present on a big file's first page,
-        // or when a requested symbol wasn't found, so the model can jump to one.
-        simbolos?: { nome: string; linha: number; tipo: string }[]
-        error?: string
-      }> => ipcRenderer.invoke('ai:code:read', root, rel, offset, maxChars, scope),
-      search: (
-        root: string,
-        term: string
-      ): Promise<{
-        matches?: { file: string; line: number; text: string }[]
-        truncated?: boolean
-        error?: string
-      }> => ipcRenderer.invoke('ai:code:search', root, term)
-    },
-    // Fetches a web page's text through the main process (native fetch, capped
-    // and vetted there). Resolves with the text or with a reason it didn't.
-    web: {
-      fetch: (
-        url: string,
-        render?: boolean
-      ): Promise<{ content: string; url: string; truncated: boolean } | { error: string }> =>
-        ipcRenderer.invoke('ai:web:fetch', url, render)
-    },
-    // Read a project file (uploaded via FilesView) and return its parsed text.
-    projectFile: {
-      read: (
-        fileId: string
-      ): Promise<{ text: string; truncated: boolean; size?: number } | { error: string }> =>
-        ipcRenderer.invoke('ai:project-file:read', fileId)
-    },
-    // User-written Skills (.md files in userData/skills/).
-    skills: {
-      list: (): Promise<Skill[]> => ipcRenderer.invoke('ai:skills:list'),
-      save: (input: {
-        name: string
-        body: string
-        oldName?: string
-      }): Promise<{ skill: Skill } | { error: string }> =>
-        ipcRenderer.invoke('ai:skills:save', input),
-      delete: (name: string): Promise<void> => ipcRenderer.invoke('ai:skills:delete', name),
-      import: (): Promise<{ skill: Skill } | { error: string }> =>
-        ipcRenderer.invoke('ai:skills:import')
-    }
+    pickDirectory: (): Promise<{ path: string | null }> => ipcRenderer.invoke('ai:pick-directory')
   },
   files: {
     // Two-step import: pick/stageDropped return tokens for the chosen files

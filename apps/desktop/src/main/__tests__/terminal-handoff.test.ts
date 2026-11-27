@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { buildTerminalHandoff } from '../modules/agent/terminal-handoff'
-import type { AiMemory } from '../modules/ai/memory'
+import type { AiMemory } from '@sagyou/core/memory'
 
 describe('buildTerminalHandoff', () => {
   it('records a successful run with deterministic project id and references', () => {
@@ -19,8 +19,7 @@ describe('buildTerminalHandoff', () => {
     expect(handoff).toMatchObject({
       id: 'handoff:project-1:run-1',
       type: 'handoff',
-      projectId: 'project-1',
-      sourceConversationId: null
+      projectId: 'project-1'
     })
     expect(handoff.body).toContain('run=run-1')
     expect(handoff.body).not.toContain('conversa=')

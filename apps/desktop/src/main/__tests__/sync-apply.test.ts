@@ -5,7 +5,7 @@
 // undo a received change, and a debt edited on both sides never resolves on
 // its own while the transactions around it still apply.
 import { describe, expect, it } from 'vitest'
-import type { WireRecord } from '../modules/sync/sync-batch'
+import type { WireRecord } from '@sagyou/core/sync/batch'
 import {
   applyRecordsToState,
   decodeIncoming,
@@ -18,9 +18,9 @@ import {
   type IncomingRecord,
   type StoredSyncVersion,
   type SyncableState
-} from '../modules/sync/sync-apply'
-import { extractDataRecords, hashPayload, type SyncRecord } from '../modules/sync/sync-records'
-import type { AiMemory } from '../modules/ai/memory'
+} from '@sagyou/core/sync/apply'
+import { extractDataRecords, hashPayload, type SyncRecord } from '@sagyou/core/sync/records'
+import type { AiMemory } from '@sagyou/core/memory'
 
 const T = '2026-10-30T12:00:00.000Z'
 const OLD = '000000000001000-0000-a'
@@ -234,7 +234,6 @@ function local(): State {
     ],
     files: [],
     activeTimers: [{ taskId: 't1', startedAt: 1 }],
-    activeTimer: { taskId: 't1', startedAt: 1 },
     uiPreferences: { theme: 'dark', fontSize: 'large' },
     activeFinancialProfileId: 'outro',
     activeProjectId: 'p1'
@@ -269,7 +268,6 @@ describe('applyRecordsToState', () => {
     const a = local()
     const result = applyRecordsToState(a, extractDataRecords(remote()).map(wire)) as State
     expect(result.activeTimers).toEqual(a.activeTimers)
-    expect(result.activeTimer).toEqual(a.activeTimer)
     expect(result.uiPreferences).toEqual(a.uiPreferences)
     expect(result.activeFinancialProfileId).toBe('outro')
     expect(result.activeProjectId).toBe('p1')

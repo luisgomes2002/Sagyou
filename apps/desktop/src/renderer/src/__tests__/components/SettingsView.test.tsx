@@ -2,7 +2,7 @@ import type { JSX } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { SettingsView } from '../../components/views/SettingsView'
-import { ALL_FEATURE_IDS, type UiPreferences } from '../../types'
+import { ALL_FEATURE_IDS, type UiPreferences } from '@sagyou/core/types'
 
 // Sync and updates have their own suites; here only their placement matters.
 vi.mock('../../components/settings/SyncSettings', () => ({

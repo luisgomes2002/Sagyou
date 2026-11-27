@@ -1,6 +1,6 @@
 ﻿import { useCallback, useEffect, useState } from 'react'
 import { useKanbanStore } from '../../store/kanban'
-import type { AiMemory, MemoryType } from '../../types'
+import type { AiMemory, MemoryType } from '@sagyou/core/types'
 import { searchFocusClass } from '../../utils/searchFocus'
 
 // The memory control panel: see, pin, restore and delete the durable facts the

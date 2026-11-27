@@ -1,8 +1,13 @@
 ﻿import { useEffect, useRef, useState } from 'react'
 import Decimal from 'decimal.js'
-import type { ShoppingItem, FinancialTable, Currency } from '../../types'
-import { CURRENCY_CONFIG } from '../../types'
-import { formatCurrency, itemTotal, parseDecimalInput, formatAmountInput } from './shared'
+import type { ShoppingItem, FinancialTable, Currency } from '@sagyou/core/types'
+import { CURRENCY_CONFIG } from '@sagyou/core/types'
+import {
+  formatCurrency,
+  itemTotal,
+  parseDecimalInput,
+  formatAmountInput
+} from '@sagyou/core/finance'
 import { searchFocusClass, useSearchFocus } from '../../utils/searchFocus'
 
 interface ItemRowProps {

@@ -1,6 +1,6 @@
 import { useState, type JSX } from 'react'
-import type { Currency } from '../../types'
-import { formatCurrency } from './shared'
+import type { Currency } from '@sagyou/core/types'
+import { formatCurrency } from '@sagyou/core/finance'
 import { balanceAxisLabelY, balanceAxisTicks } from './balanceAxis'
 
 interface ChartMonth {

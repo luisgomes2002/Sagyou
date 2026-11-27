@@ -10,9 +10,9 @@ import {
   type Priority,
   type TaskImage,
   type FeatureId
-} from './types'
+} from '@sagyou/core/types'
 import { isViewEnabled, type AppView, type NavTarget, type SettingsSectionId } from './navigation'
-import { isDoneColumn, isTaskDone } from './utils/columns'
+import { isDoneColumn, isTaskDone } from '@sagyou/core/columns'
 import { isGoalComplete } from './utils/goals'
 import { TitleBar } from './components/layout/TitleBar'
 import { Sidebar } from './components/layout/Sidebar'
@@ -42,7 +42,7 @@ import { ProjectModal } from './components/modals/ProjectModal'
 import { ColumnModal } from './components/modals/ColumnModal'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { RestoreSyncDialog } from './components/modals/RestoreSyncDialog'
-import { syncAsksAfterRestore } from './utils/sync-view'
+import { syncAsksAfterRestore } from '@sagyou/core/sync/view'
 import { TaskViewModal } from './components/modals/TaskViewModal'
 import { ToastContainer, type ToastMessage } from './components/layout/Toast'
 import { HomeView } from './components/views/HomeView'
@@ -428,8 +428,8 @@ export default function App() {
     name: string,
     description: string,
     color: string,
-    links: import('./types').ProjectLink[]
-  ) => {
+    links: import('@sagyou/core/types').ProjectLink[]
+  ): void => {
     if (projectModal.project) {
       updateProject(projectModal.project.id, { name, description, color, links })
       addToast('Projeto atualizado')

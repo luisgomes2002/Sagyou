@@ -2,8 +2,8 @@
 import { describe, expect, it, vi, type Mock } from 'vitest'
 import type { IpcMain } from 'electron'
 import { registerMemoryHandlers } from '../handlers/memory'
-import * as memoryRules from '../modules/ai/memory'
-import type { AiMemory } from '../modules/ai/memory'
+import * as memoryRules from '@sagyou/core/memory'
+import type { AiMemory } from '@sagyou/core/memory'
 
 const DAY = 86_400_000
 
@@ -17,7 +17,6 @@ function memory(over: Partial<AiMemory> & { id: string }): AiMemory {
     tags: ['handoff', 'terminal', 'completed'],
     pinned: false,
     source: 'modelo',
-    sourceConversationId: null,
     createdAt: now,
     updatedAt: now,
     lastAccessedAt: now,

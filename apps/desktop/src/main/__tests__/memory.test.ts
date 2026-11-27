@@ -19,7 +19,7 @@ import {
   MEMORY_DECAY_BASE_DAYS,
   MEMORY_MAX,
   type AiMemory
-} from '../modules/ai/memory'
+} from '@sagyou/core/memory'
 
 const NOW = '2026-07-21T12:00:00.000Z'
 
@@ -32,7 +32,6 @@ const mem = (over: Partial<AiMemory> = {}): AiMemory => ({
   tags: [],
   pinned: false,
   source: 'modelo',
-  sourceConversationId: null,
   createdAt: NOW,
   updatedAt: NOW,
   lastAccessedAt: NOW,
@@ -80,7 +79,7 @@ describe('buildMemory (create)', () => {
     expect(res.memory.pinned).toBe(false) // only an explicit true pins
   })
 
-  it('ignores a conversation reference: chat history no longer exists', () => {
+  it('has no conversation reference: chat history no longer exists', () => {
     const res = buildMemory(
       null,
       { title: 'decisao', sourceConversationId: 'conv-1' } as never,
@@ -88,22 +87,12 @@ describe('buildMemory (create)', () => {
       NOW
     )
     if ('error' in res) throw new Error('unexpected error')
-    expect(res.memory.sourceConversationId).toBeNull()
-  })
-
-  it('drops a stored conversation reference when the memory is edited', () => {
-    const existing = mem({ id: 'e1', sourceConversationId: 'conv-old' })
-    const res = buildMemory(existing, { title: 'novo' }, 'e1', NOW)
-    if ('error' in res) throw new Error('unexpected error')
-    expect(res.memory.sourceConversationId).toBeNull()
+    expect(res.memory).not.toHaveProperty('sourceConversationId')
   })
 
   it('reads a legacy row with a conversation reference as having none', () => {
-    const memory = normalizeMemory(
-      { id: 'legacy', sourceConversationId: 'conv-9' } as Partial<AiMemory> & { id: string },
-      NOW
-    )
-    expect(memory.sourceConversationId).toBeNull()
+    const memory = normalizeMemory({ id: 'legacy', sourceConversationId: 'conv-9' } as never, NOW)
+    expect(memory).not.toHaveProperty('sourceConversationId')
   })
 })
 
@@ -353,35 +342,22 @@ describe('scrubConversationLinks', () => {
       mem({
         id: 'handoff:p1',
         type: 'handoff',
-        body: `Pergunta: x\nResposta: abc…${pointer}`,
-        sourceConversationId: 'conv-9'
+        body: `Pergunta: x\nResposta: abc…${pointer}`
       })
     ]).memories
 
     expect(out.body).toBe('Pergunta: x\nResposta: abc…')
-    expect(out.sourceConversationId).toBeNull()
   })
 
   it('drops the conversation reference from a terminal handoff', () => {
     const [out] = scrubConversationLinks([
       mem({
         type: 'handoff',
-        body: 'Status: ok\nReferências: conversa=conv-1; run=run-7',
-        sourceConversationId: 'conv-1'
+        body: 'Status: ok\nReferências: conversa=conv-1; run=run-7'
       })
     ]).memories
 
     expect(out.body).toBe('Status: ok\nReferências: run=run-7')
-  })
-
-  it('clears the link on a memory whose body never mentioned it', () => {
-    const result = scrubConversationLinks([
-      mem({ id: 'a', body: 'Use Decimal.', sourceConversationId: 'conv-2' })
-    ])
-
-    expect(result.memories[0].body).toBe('Use Decimal.')
-    expect(result.memories[0].sourceConversationId).toBeNull()
-    expect(result.changed).toBe(1)
   })
 
   it('only rewrites handoff text: a user-written memory that mentions conversa= is untouched', () => {

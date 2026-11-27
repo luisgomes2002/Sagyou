@@ -1,6 +1,6 @@
 import type { StateCreator } from 'zustand'
-import type { StoredFile, FinancialTable } from '../../types'
-import { applyFinancialTransactionEdit } from '../../utils/financialRecord'
+import type { StoredFile, FinancialTable } from '@sagyou/core/types'
+import { applyFinancialTransactionEdit } from '@sagyou/core/financialRecord'
 
 export interface FilesSlice {
   files: StoredFile[]

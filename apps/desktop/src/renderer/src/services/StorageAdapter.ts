@@ -16,7 +16,7 @@ import type {
   Routine,
   FeatureId,
   UiPreferences
-} from '../types'
+} from '@sagyou/core/types'
 
 type SaveData = {
   projects: Project[]
@@ -35,9 +35,6 @@ type SaveData = {
   timeBlocks?: TimeBlock[]
   routines?: Routine[]
   activeTimers?: { taskId: string; startedAt: number }[]
-  // Legacy single-timer mirror (activeTimers[0]); kept so an older app version
-  // reading the same DB still resolves one running timer.
-  activeTimer?: { taskId: string; startedAt: number } | null
   // Sync generation: returned by load, echoed on every save so main can keep
   // records changed remotely after the state this save was built from.
   syncGeneration?: number
