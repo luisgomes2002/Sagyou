@@ -51,7 +51,7 @@ A fonte da verdade visual é [`UI_DESIGN.md`](../../../UI_DESIGN.md). A referên
 ## Regras que quebram se esquecidas
 - **Texto:** todo texto visível em pt-BR, curto e direto ("Não deu para salvar, tente de novo."). Código, nomes e comentários ficam em inglês. Use as strings exatas da spec.
 - **Componentes:** função nomeada e export nomeado. Arquivo de componente só exporta componentes, e helpers vão para `utils/`.
-- **Markdown:** `react-markdown` sem `rehype-raw`, e nunca `dangerouslySetInnerHTML` com texto de usuário, agente, memória ou web.
+- **Markdown:** hoje não há biblioteca de Markdown instalada; se uma voltar, sem `rehype-raw`, e nunca `dangerouslySetInnerHTML` com texto de usuário, agente, memória ou web.
 - **Acessibilidade:**
   - todo input tem label;
   - botão é `<button>` de verdade;
