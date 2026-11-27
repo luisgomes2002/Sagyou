@@ -70,8 +70,7 @@ The app is a frameless Electron window split into three processes. **AI in the p
 owns SQLite persistence. Domain implementation lives in `modules/`: `agent/`
 (executor session, PTY, worktree, diff, delivery, MCP, run archive and terminal handoff),
 `ai/` (memory, the `ai-config.json` write guard and the eval core),
-`files/` (attachments, backup, image bytes and document parsing), `code/` (source access and
-diff), `search/` (derived FTS5 index and queries), `security/` (app lock),
+`files/` (attachments, backup, image bytes and document parsing), `code/` (the agent's diff), `search/` (derived FTS5 index and queries), `security/` (app lock),
 `web/` (external links), and `financial/` (exchange rates). Imports should use the
 domain module path; do not add domain implementation back to the main root.
 

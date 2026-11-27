@@ -111,10 +111,10 @@ src/
       agent/     # sessões, PTY, worktree, diff, entrega, MCP, arquivo de runs e adapters
       ai/        # memória, trava do ai-config.json, núcleo de avaliação
       files/     # anexos, backup, bytes de imagem, parser e runtime MarkItDown
-      code/      # leitura e diff de arquivos de código
+      code/      # só o diff do agente (code-diff.ts)
       search/    # índice FTS5 derivado e consultas
       security/  # senha de bloqueio e validação da configuração
-      web/       # fetch/renderização com política de segurança e links externos
+      web/       # links externos (safeExternalUrl)
       financial/ # consulta de câmbio
     __tests__/   # precisam de @vitest-environment node
   preload/
